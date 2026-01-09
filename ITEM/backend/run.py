@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
-
-
-
 from app import create_app
 
 # 创建应用实例
