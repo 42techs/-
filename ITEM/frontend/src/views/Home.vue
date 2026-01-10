@@ -1,11 +1,11 @@
 <template>
   <div class="layout">
     <Navbar />
-    
+
     <main class="main">
       <!-- 欢迎区 -->
       <section class="welcome">
-        <h1>欢迎回来，<span>{{ user.username }}</span></h1>
+        <h1>欢迎回来，<span>{{ userName }}</span></h1>
         <p>数据驱动决策，洞察趋势</p>
       </section>
 
@@ -19,7 +19,7 @@
             <div class="stat-change positive">+12%</div>
           </div>
         </div>
-        
+
         <div class="stat">
           <div class="stat-icon">🕷️</div>
           <div>
@@ -28,7 +28,7 @@
             <div class="stat-change positive">+8%</div>
           </div>
         </div>
-        
+
         <div class="stat">
           <div class="stat-icon">⚡</div>
           <div>
@@ -77,7 +77,7 @@
               </div>
               <span class="tag">开发中</span>
             </button>
-            
+
             <button class="action" disabled>
               <span class="action-icon">🕸️</span>
               <div>
@@ -123,8 +123,11 @@ import { computed } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import Navbar from "@/components/Navbar.vue";
 
-const auth = useAuthStore();
-const user = computed(() => auth.user || {});
+// 获取用户信息
+const authStore = useAuthStore();
+const user = computed(() => authStore.user || {});
+// 处理用户名默认值
+const userName = computed(() => user.value.username || "用户");
 </script>
 
 <style scoped>
@@ -139,7 +142,7 @@ const user = computed(() => auth.user || {});
   padding: 40px 24px;
 }
 
-/* 欢迎区 */
+/* 欢迎区样式 */
 .welcome {
   margin-bottom: 40px;
 }
@@ -155,14 +158,16 @@ const user = computed(() => auth.user || {});
   background: linear-gradient(135deg, #667eea, #764ba2);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .welcome p {
   color: #718096;
   font-size: 1.125rem;
+  margin: 0;
 }
 
-/* 统计卡片 */
+/* 统计卡片样式 */
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -178,7 +183,7 @@ const user = computed(() => auth.user || {});
   align-items: center;
   gap: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .stat:hover {
@@ -226,13 +231,13 @@ const user = computed(() => auth.user || {});
   margin-bottom: 24px;
 }
 
-/* 卡片 */
+/* 卡片通用样式 */
 .card {
   background: white;
   border-radius: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .card:hover {
@@ -255,6 +260,7 @@ const user = computed(() => auth.user || {});
   font-size: 1.125rem;
   font-weight: 600;
   color: #1a202c;
+  margin: 0;
 }
 
 .badge {
@@ -270,7 +276,7 @@ const user = computed(() => auth.user || {});
   padding: 24px;
 }
 
-/* 信息项 */
+/* 信息项样式 */
 .info {
   display: flex;
   justify-content: space-between;
@@ -292,7 +298,7 @@ const user = computed(() => auth.user || {});
   color: #1a202c;
 }
 
-/* 操作按钮 */
+/* 操作按钮样式 */
 .action {
   width: 100%;
   display: flex;
@@ -303,7 +309,7 @@ const user = computed(() => auth.user || {});
   border: 2px solid transparent;
   border-radius: 12px;
   cursor: not-allowed;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   margin-bottom: 12px;
 }
 
@@ -344,7 +350,7 @@ const user = computed(() => auth.user || {});
   font-weight: 600;
 }
 
-/* 时间线 */
+/* 时间线样式 */
 .timeline {
   padding: 24px;
 }
@@ -361,7 +367,7 @@ const user = computed(() => auth.user || {});
 }
 
 .timeline-item:not(:last-child)::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 11px;
   top: 32px;
@@ -397,22 +403,77 @@ const user = computed(() => auth.user || {});
   color: #a0aec0;
 }
 
-/* 响应式 */
+/* 响应式优化 */
 @media (max-width: 768px) {
   .main {
     padding: 24px 16px;
   }
-  
+
   .welcome h1 {
     font-size: 2rem;
   }
-  
+
   .stats {
     grid-template-columns: 1fr;
   }
-  
+
   .grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 适配深色模式（可选） */
+@media (prefers-color-scheme: dark) {
+  .layout {
+    background: #1a1a2e;
+  }
+
+  .stat,
+  .card {
+    background: #16213e;
+  }
+
+  .welcome h1 {
+    color: #e94560;
+  }
+
+  .welcome p {
+    color: #a5d8ff;
+  }
+
+  .stat-label,
+  .label,
+  .timeline-desc,
+  .timeline-time,
+  .action-desc {
+    color: #a5d8ff;
+  }
+
+  .stat-value,
+  .value,
+  .timeline-title,
+  .action-title {
+    color: #ffffff;
+  }
+
+  .card-header {
+    border-bottom-color: #0f3460;
+  }
+
+  .info {
+    border-bottom-color: #0f3460;
+  }
+
+  .action {
+    background: #0f3460;
+  }
+
+  .action-icon {
+    background: #16213e;
+  }
+
+  .timeline-item:not(:last-child)::after {
+    background: #0f3460;
   }
 }
 </style>

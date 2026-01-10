@@ -40,13 +40,16 @@ function onLogout() {
   background: white;
   border-bottom: 1px solid #e2e8f0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  position: sticky; /* 桌面端导航栏固定在顶部 */
+  top: 0;
+  z-index: 999;
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1440px; /* 扩大桌面端容器宽度 */
   margin: 0 auto;
-  padding: 0 24px;
-  height: 64px;
+  padding: 0 32px; /* 增加左右内边距 */
+  height: 72px; /* 提升导航栏高度，更适配桌面端 */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -55,31 +58,32 @@ function onLogout() {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px; /* 增大品牌区间距 */
   font-weight: 700;
   color: #1a202c;
 }
 
 .logo {
-  font-size: 1.5rem;
+  font-size: 1.8rem; /* 增大logo尺寸 */
 }
 
 .title {
-  font-size: 1.125rem;
+  font-size: 1.25rem; /* 增大标题字号 */
 }
 
 .nav {
   display: flex;
-  gap: 8px;
+  gap: 16px; /* 增大导航项间距 */
 }
 
 .nav a {
-  padding: 8px 16px;
+  padding: 10px 20px; /* 增大导航项点击区域 */
   color: #718096;
   text-decoration: none;
   border-radius: 8px;
   font-weight: 500;
   transition: all 0.2s;
+  font-size: 1rem; /* 增大导航文字 */
 }
 
 .nav a:hover {
@@ -95,21 +99,22 @@ function onLogout() {
 .actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px; /* 增大操作区间距 */
 }
 
 .user {
   color: #2d3748;
   font-weight: 500;
+  font-size: 1rem; /* 增大用户名文字 */
 }
 
 .logout {
-  padding: 8px 16px;
+  padding: 10px 20px; /* 增大按钮点击区域 */
   background: #f56565;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 0.875rem;
+  font-size: 0.9375rem; /* 增大按钮文字 */
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -120,6 +125,7 @@ function onLogout() {
   transform: translateY(-1px);
 }
 
+/* 桌面端默认显示导航，仅移动端隐藏 */
 @media (max-width: 768px) {
   .nav {
     display: none;

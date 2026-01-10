@@ -1,5 +1,6 @@
 <template>
   <div class="spider-page">
+    <Navbar />
     <div class="page-header">
       <div class="header-content">
         <div class="header-icon">🕷️</div>
@@ -29,9 +30,9 @@
         </div>
 
         <div class="card-body">
-          <button 
-            :disabled="running" 
-            @click="startSpider"
+          <button
+            :disabled="running"
+            @click="handleStartSpider"
             class="action-btn"
             :class="{ 'btn-disabled': running }"
           >
@@ -42,6 +43,12 @@
           <div class="info-box">
             <span class="info-icon">💡</span>
             <p>点击按钮将创建新的爬虫任务,系统会自动返回任务ID并开始实时监控任务状态</p>
+          </div>
+
+          <!-- 全局错误提示 -->
+          <div v-if="globalError" class="error-message global-error">
+            <span class="error-icon">❌</span>
+            <span class="error-text">{{ globalError }}</span>
           </div>
         </div>
       </section>
@@ -83,10 +90,10 @@
           <div v-if="running" class="progress-section">
             <div class="progress-header">
               <span class="progress-label">任务进度</span>
-              <span class="progress-percentage">{{ progress }}%</span>
+              <span class="progress-percentage">{{ progress.toFixed(1) }}%</span>
             </div>
             <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+              <div class="progress-fill" :style="{ width: `${progress.toFixed(1)}%` }"></div>
             </div>
           </div>
         </div>
@@ -99,7 +106,7 @@
             <div class="icon-badge gradient-green">✅</div>
             <h3 class="card-title">执行结果</h3>
           </div>
-          <button @click="copyResult" class="copy-btn">
+          <button @click="handleCopyResult" class="copy-btn" :disabled="!result">
             <span>📋</span>
             <span>复制</span>
           </button>
@@ -119,13 +126,27 @@
             <div class="icon-badge gradient-purple">📜</div>
             <h3 class="card-title">任务历史</h3>
           </div>
+          <!-- 手动刷新按钮 -->
+          <button @click="fetchTaskHistory" class="copy-btn">
+            <span>🔄</span>
+            <span>刷新</span>
+          </button>
         </div>
 
         <div class="card-body">
-          <div class="empty-state">
+          <div v-if="taskHistory.length === 0" class="empty-state">
             <div class="empty-icon">🔭</div>
             <p class="empty-text">暂无历史记录</p>
             <p class="empty-hint">启动任务后将在此处显示历史记录</p>
+          </div>
+          <div v-else class="history-list">
+            <div v-for="task in taskHistory" :key="task.id || task.task_id" class="history-item">
+              <div class="history-id">ID: {{ (task.id || task.task_id).slice(0, 8) }}...</div>
+              <div class="history-status" :class="`status-${(task.status || '').toLowerCase()}`">
+                {{ task.status === 'PENDING' ? '等待中' : task.status === 'RUNNING' ? '执行中' : task.status === 'SUCCESS' ? '已完成' : '失败' }}
+              </div>
+              <div class="history-time">{{ formatTime(task.created_at || task.create_time) }}</div>
+            </div>
           </div>
         </div>
       </section>
@@ -134,170 +155,357 @@
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount } from "vue";
-import { runSpider, spiderStatus, spiderResult } from "@/api/spider";
+import { ref, computed, onBeforeUnmount, onMounted } from "vue";
+import { runSpider, spiderStatus, getSpiderTasks } from "@/api/spider";
+import Navbar from "@/components/Navbar.vue";
 
-const taskId = ref("");
-const status = ref("");
-const error = ref("");
-const result = ref("");
-const running = ref(false);
-const progress = ref(0);
+// 状态管理
+const taskId = ref(""); // 爬虫任务ID
+const status = ref(""); // 任务状态(PENDING/RUNNING/SUCCESS/FAILED)
+const error = ref(""); // 错误信息
+const result = ref(""); // 任务执行结果
+const running = ref(false); // 是否正在运行
+const progress = ref(0); // 任务进度(0-100)
+const globalError = ref(""); // 全局错误（404/500等）
+const taskHistory = ref([]); // 任务历史列表
 
-let timer = null;
-let progressTimer = null;
+// 定时器管理
+let statusTimer = null; // 状态轮询定时器
+let progressTimer = null; // 进度模拟定时器
+let historyTimer = null; // 任务历史轮询定时器
 
+// 计算属性 - 状态样式映射
 const statusClass = computed(() => {
   const statusMap = {
-    'PENDING': 'status-pending',
-    'RUNNING': 'status-running',
-    'SUCCESS': 'status-success',
-    'FAILED': 'status-failed'
+    PENDING: "status-pending",
+    RUNNING: "status-running",
+    SUCCESS: "status-success",
+    FAILED: "status-failed",
   };
-  return statusMap[status.value] || 'status-pending';
+  return statusMap[status.value] || "status-pending";
 });
 
+// 计算属性 - 状态文本映射（中文展示）
 const statusText = computed(() => {
   const textMap = {
-    'PENDING': '等待中',
-    'RUNNING': '执行中',
-    'SUCCESS': '已完成',
-    'FAILED': '失败'
+    PENDING: "等待中",
+    RUNNING: "执行中",
+    SUCCESS: "已完成",
+    FAILED: "失败",
   };
-  return textMap[status.value] || '未知';
+  return textMap[status.value] || "未知";
 });
 
-// 修复:重命名函数以匹配按钮绑定
-async function startSpider() {
+/**
+ * 格式化时间显示
+ * @param {string} timeStr - ISO格式时间字符串
+ * @returns {string} 格式化后的时间
+ */
+function formatTime(timeStr) {
+  if (!timeStr) return "未知时间";
+  try {
+    const date = new Date(timeStr);
+    return date.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch (e) {
+    return timeStr.slice(0, 19).replace("T", " ");
+  }
+}
+
+/**
+ * 启动爬虫任务
+ */
+async function handleStartSpider() {
+  // 防止重复点击
+  if (running.value) return;
+
+  // 重置状态
   error.value = "";
   result.value = "";
   status.value = "";
   progress.value = 0;
+  globalError.value = "";
 
   try {
+    // 调用启动接口
     const resp = await runSpider();
-    taskId.value = resp.task_id;
-    status.value = "PENDING";
+    
+    // 适配后端返回的成功码 code: 0
+    if (resp.code !== 0) {
+      throw new Error(resp.message || "启动爬虫任务失败");
+    }
+
+    // 从resp.data中获取task_id（适配后端返回字段）
+    const taskIdVal = resp.data?.task_id || resp.data?.id;
+    if (!taskIdVal) {
+      throw new Error("未获取到有效任务ID");
+    }
+
+    // 更新状态
+    taskId.value = taskIdVal;
+    status.value = resp.data?.status || "PENDING";
     running.value = true;
 
-    // 模拟进度
+    // 模拟进度更新（仅前端展示）
     progressTimer = setInterval(() => {
       if (progress.value < 90) {
         progress.value += Math.random() * 10;
+        progress.value = Math.min(progress.value, 90);
       }
     }, 800);
 
-    // 轮询状态
-    timer = setInterval(async () => {
-      try {
-        const s = await spiderStatus(taskId.value);
-        status.value = s.data.status;
-        error.value = s.data.error || "";
-
-        if (status.value === "SUCCESS") {
-          clearInterval(timer);
-          clearInterval(progressTimer);
-          timer = null;
-          progressTimer = null;
-          progress.value = 100;
-          
-          const r = await spiderResult(taskId.value);
-          result.value = JSON.stringify(r.data, null, 2);
-          running.value = false;
-        }
-
-        if (status.value === "FAILED") {
-          clearInterval(timer);
-          clearInterval(progressTimer);
-          timer = null;
-          progressTimer = null;
-          running.value = false;
-        }
-      } catch (e) {
-        error.value = e?.message || "轮询失败";
-        clearInterval(timer);
-        clearInterval(progressTimer);
-        timer = null;
-        progressTimer = null;
-        running.value = false;
-      }
+    // 轮询任务状态
+    statusTimer = setInterval(async () => {
+      await checkSpiderStatus();
     }, 1500);
+
+    // 立即刷新任务历史
+    await fetchTaskHistory();
+
   } catch (e) {
-    error.value = e?.message || "启动失败";
+    const errMsg = e?.message || "启动爬虫任务失败";
+    // 精准的错误提示
+    if (errMsg.includes("404")) {
+      globalError.value = `接口不存在：请检查后端服务（http://10.244.181.48:5000）是否启动，或接口路径是否正确`;
+    } else if (errMsg.includes("401")) {
+      globalError.value = "登录状态失效：请重新登录后再尝试启动任务";
+    } else if (errMsg.includes("未配置微博Cookie")) {
+      globalError.value = "配置错误：后端未配置微博Cookie，无法启动爬虫任务";
+    } else if (errMsg.includes("已有爬虫任务正在运行")) {
+      globalError.value = "任务冲突：已有爬虫任务正在运行，请先等待该任务完成";
+    } else if (errMsg.includes("500")) {
+      globalError.value = "服务器错误：后端处理请求时发生异常，请联系管理员";
+    } else {
+      // 排除成功消息被误判的情况
+      if (!errMsg.includes("爬虫任务创建成功")) {
+        globalError.value = errMsg;
+      }
+    }
+    
+    // 只有真正的错误才更新error状态
+    if (globalError.value) {
+      error.value = errMsg;
+      running.value = false;
+      clearAllTimers();
+      console.error("启动爬虫失败：", e);
+    }
+  }
+}
+
+/**
+ * 检查爬虫任务状态（适配后端 /api/spider/tasks/{taskId} 接口）
+ */
+async function checkSpiderStatus() {
+  if (!taskId.value) return;
+
+  try {
+    const resp = await spiderStatus(taskId.value);
+    
+    // 适配后端状态查询的成功码
+    if (resp.code !== 0) {
+      throw new Error(resp.message || "获取任务状态失败");
+    }
+
+    // 从resp.data中获取任务详情（适配后端返回结构）
+    const taskData = resp.data;
+    status.value = taskData?.status || "";
+    error.value = taskData?.error || "";
+
+    // 任务成功完成
+    if (status.value === "SUCCESS") {
+      clearAllTimers();
+      progress.value = 100;
+      running.value = false;
+      // 格式化结果展示（适配后端result字段）
+      result.value = JSON.stringify(taskData?.result || {}, null, 2);
+      // 刷新任务历史
+      await fetchTaskHistory();
+    }
+
+    // 任务失败
+    if (status.value === "FAILED") {
+      clearAllTimers();
+      running.value = false;
+      error.value = taskData?.error || "任务执行失败，具体原因请查看后端日志";
+      // 刷新任务历史
+      await fetchTaskHistory();
+    }
+
+    // 任务仍在运行
+    if (status.value === "RUNNING") {
+      progress.value = Math.min(progress.value + 1, 90);
+    }
+
+  } catch (e) {
+    error.value = e?.message || "轮询任务状态失败";
+    clearAllTimers();
     running.value = false;
   }
 }
 
-function copyResult() {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(result.value);
-    // 可以添加提示消息
-    alert('复制成功!');
+/**
+ * 获取任务历史列表（增强容错：适配多种后端返回格式）
+ */
+async function fetchTaskHistory() {
+  try {
+    // 显示加载状态（可选）
+    const resp = await getSpiderTasks({ page: 1, per_page: 10 });
+    // 增强容错：适配多种后端返回格式
+    let tasks = [];
+    if (resp.code === 0) {
+      // 兼容：data.tasks / data / 直接返回数组
+      tasks = resp.data?.tasks || resp.data || [];
+      // 额外兼容：如果是对象包含list字段
+      if (tasks.list) tasks = tasks.list;
+    } else {
+      // 兼容后端未返回code的情况
+      tasks = resp.data?.tasks || resp.data || [];
+    }
+    
+    // 标准化任务数据格式
+    taskHistory.value = tasks.map(task => ({
+      id: task.id || task.task_id,
+      status: task.status || 'UNKNOWN',
+      created_at: task.created_at || task.create_time || new Date().toISOString(),
+      ...task
+    }));
+    
+    console.log("任务历史数据（标准化后）：", taskHistory.value); // 调试用
+  } catch (e) {
+    console.error("获取任务历史失败：", e);
+    taskHistory.value = [];
   }
 }
 
+/**
+ * 复制结果到剪贴板
+ */
+async function handleCopyResult() {
+  if (!result.value) return;
+
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(result.value);
+      alert("结果复制成功！");
+    } else {
+      // 降级方案：兼容旧浏览器
+      const textArea = document.createElement("textarea");
+      textArea.value = result.value;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("结果复制成功！");
+    }
+  } catch (e) {
+    error.value = "复制失败：" + e.message;
+    alert("复制失败，请手动复制结果内容");
+  }
+}
+
+/**
+ * 清除所有定时器
+ */
+function clearAllTimers() {
+  if (statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = null;
+  }
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+  if (historyTimer) {
+    clearInterval(historyTimer);
+    historyTimer = null;
+  }
+}
+
+// 组件挂载时初始化
+onMounted(async () => {
+  // 初始加载任务历史
+  await fetchTaskHistory();
+  // 启动任务历史轮询（每5秒刷新一次）
+  historyTimer = setInterval(() => {
+    fetchTaskHistory();
+  }, 5000);
+});
+
+// 组件卸载前清除定时器（防止内存泄漏）
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer);
-  if (progressTimer) clearInterval(progressTimer);
+  clearAllTimers();
 });
 </script>
 
 <style scoped>
+/* 原有样式保持不变，仅新增/修改以下样式 */
 .spider-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea15 0%, #764ba215 50%, #f5576c15 100%);
-  padding: 32px 24px;
+  padding: 0;
 }
 
 .page-header {
-  max-width: 1200px;
-  margin: 0 auto 40px;
+  max-width: 1440px;
+  margin: 0 auto 48px;
   position: relative;
   overflow: hidden;
   background: white;
   border-radius: 24px;
-  padding: 40px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 56px 48px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  margin-top: 24px;
 }
 
 .header-content {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 32px;
   position: relative;
   z-index: 1;
 }
 
 .header-icon {
-  width: 80px;
-  height: 80px;
+  width: 100px;
+  height: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 3rem;
+  font-size: 4rem;
   background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  border-radius: 24px;
+  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.3);
   animation: float 3s ease-in-out infinite;
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .page-title {
-  font-size: 2.5rem;
+  font-size: 3rem;
   font-weight: 800;
   background: linear-gradient(135deg, #667eea, #764ba2);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin: 0 0 8px 0;
+  margin: 0 0 12px 0;
 }
 
 .page-subtitle {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   color: #718096;
   margin: 0;
 }
@@ -306,8 +514,8 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 0;
   right: 0;
-  width: 200px;
-  height: 200px;
+  width: 300px;
+  height: 300px;
   pointer-events: none;
 }
 
@@ -318,49 +526,65 @@ onBeforeUnmount(() => {
 }
 
 .deco-circle:nth-child(1) {
-  width: 150px;
-  height: 150px;
-  top: -75px;
-  right: -75px;
+  width: 200px;
+  height: 200px;
+  top: -100px;
+  right: -100px;
   animation: pulse 4s ease-in-out infinite;
 }
 
 .deco-circle:nth-child(2) {
-  width: 100px;
-  height: 100px;
-  top: -25px;
-  right: 20px;
+  width: 150px;
+  height: 150px;
+  top: -50px;
+  right: 50px;
   animation: pulse 4s ease-in-out infinite 1s;
 }
 
 @keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 0.3; }
-  50% { transform: scale(1.1); opacity: 0.5; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.5;
+  }
 }
 
 .content-wrapper {
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 1440px;
+  margin: 0 auto 64px;
   display: grid;
-  gap: 24px;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  padding: 0 32px;
+}
+
+.control-card {
+  grid-column: 1 / 2;
+}
+.status-card, .result-card, .history-card {
+  grid-column: 2 / 3;
 }
 
 /* 卡片样式 */
 .card {
   background: white;
   border-radius: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card:hover {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
   transform: translateY(-4px);
 }
 
 .card-header {
-  padding: 28px 32px;
+  padding: 32px 36px;
   border-bottom: 1px solid #f1f5f9;
   display: flex;
   justify-content: space-between;
@@ -370,19 +594,19 @@ onBeforeUnmount(() => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .icon-badge {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.75rem;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  font-size: 2rem;
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
 }
 
 .icon-badge.gradient-blue {
@@ -398,7 +622,7 @@ onBeforeUnmount(() => {
 }
 
 .card-title {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: #1a202c;
   margin: 0;
@@ -407,55 +631,62 @@ onBeforeUnmount(() => {
 .status-indicator {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 10px 20px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   color: white;
   border-radius: 50px;
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .pulse-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   background: white;
   border-radius: 50%;
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.3); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.3);
+  }
 }
 
 .card-body {
-  padding: 32px;
+  padding: 36px;
 }
 
 /* 操作按钮 */
 .action-btn {
   width: 100%;
-  padding: 20px 32px;
+  padding: 24px 36px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   color: white;
   border: none;
-  border-radius: 16px;
-  font-size: 1.125rem;
+  border-radius: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  gap: 16px;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
   position: relative;
   overflow: hidden;
 }
 
 .action-btn::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
@@ -467,7 +698,7 @@ onBeforeUnmount(() => {
 
 .action-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 10px 28px rgba(102, 126, 234, 0.4);
 }
 
 .action-btn:hover:not(:disabled)::before {
@@ -481,42 +712,68 @@ onBeforeUnmount(() => {
 }
 
 .btn-icon {
-  font-size: 1.5rem;
+  font-size: 2rem;
 }
 
 .info-box {
   display: flex;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 16px;
+  padding: 20px 24px;
   background: linear-gradient(135deg, #f0f4ff, #e8eeff);
   border-left: 4px solid #667eea;
-  border-radius: 12px;
-  margin-top: 20px;
+  border-radius: 16px;
+  margin-top: 24px;
 }
 
 .info-icon {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   flex-shrink: 0;
 }
 
 .info-box p {
   margin: 0;
   color: #4a5568;
-  font-size: 0.9375rem;
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+/* 全局错误提示 */
+.global-error {
+  margin-top: 24px;
+  background: linear-gradient(135deg, #fed7d7, #feb2b2);
+  border-left: 4px solid #e53e3e;
+}
+
+.error-message {
+  padding: 12px 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #742a2a;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.error-icon {
+  font-size: 1rem;
+}
+
+.error-text {
+  flex: 1;
 }
 
 /* 状态网格 */
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
 }
 
 .status-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .status-item.full-width {
@@ -524,32 +781,33 @@ onBeforeUnmount(() => {
 }
 
 .status-label {
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: #718096;
   font-weight: 600;
 }
 
 .status-value {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   color: #1a202c;
   font-weight: 600;
 }
 
 .status-value.monospace {
-  font-family: 'Monaco', 'Consolas', monospace;
+  font-family: "Monaco", "Consolas", monospace;
   background: #f7fafc;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 0.9375rem;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 1rem;
+  word-break: break-all;
 }
 
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 10px 20px;
   border-radius: 50px;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
   width: fit-content;
 }
@@ -575,8 +833,8 @@ onBeforeUnmount(() => {
 }
 
 .badge-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   background: white;
   border-radius: 50%;
   animation: pulse-dot 2s ease-in-out infinite;
@@ -585,26 +843,17 @@ onBeforeUnmount(() => {
 .error-box {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 16px;
+  padding: 20px 24px;
   background: linear-gradient(135deg, #fed7d7, #feb2b2);
   border-left: 4px solid #f56565;
-  border-radius: 12px;
-}
-
-.error-icon {
-  font-size: 1.25rem;
-}
-
-.error-text {
-  color: #742a2a;
-  font-weight: 500;
+  border-radius: 16px;
 }
 
 /* 进度条 */
 .progress-section {
-  margin-top: 24px;
-  padding-top: 24px;
+  margin-top: 28px;
+  padding-top: 28px;
   border-top: 1px solid #f1f5f9;
 }
 
@@ -612,17 +861,17 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .progress-label {
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: #718096;
   font-weight: 600;
 }
 
 .progress-percentage {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 700;
   background: linear-gradient(135deg, #667eea, #764ba2);
   -webkit-background-clip: text;
@@ -631,23 +880,23 @@ onBeforeUnmount(() => {
 }
 
 .progress-bar {
-  height: 12px;
+  height: 16px;
   background: #e2e8f0;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #667eea, #764ba2);
-  border-radius: 6px;
+  border-radius: 8px;
   transition: width 0.5s ease;
   position: relative;
   overflow: hidden;
 }
 
 .progress-fill::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -658,24 +907,28 @@ onBeforeUnmount(() => {
 }
 
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* 结果容器 */
 .result-container {
   background: #1a202c;
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 16px;
+  padding: 32px;
   overflow: auto;
-  max-height: 500px;
+  max-height: 600px;
 }
 
 .result-content {
   margin: 0;
   color: #48bb78;
-  font-family: 'Monaco', 'Consolas', monospace;
-  font-size: 0.875rem;
+  font-family: "Monaco", "Consolas", monospace;
+  font-size: 1rem;
   line-height: 1.8;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -684,57 +937,140 @@ onBeforeUnmount(() => {
 .copy-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 10px 20px;
   background: linear-gradient(135deg, #667eea, #764ba2);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  border-radius: 12px;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
-.copy-btn:hover {
+.copy-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.copy-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
+}
+
+/* 任务历史列表 */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f7fafc;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.history-item:hover {
+  background: #f0f4ff;
+  transform: translateX(4px);
+}
+
+.history-id {
+  font-family: monospace;
+  color: #2d3748;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: white;
+  min-width: 60px;
+  text-align: center;
+}
+
+.history-status.status-pending {
+  background: #f59e0b;
+}
+
+.history-status.status-running {
+  background: #00f2fe;
+}
+
+.history-status.status-success {
+  background: #48bb78;
+}
+
+.history-status.status-failed {
+  background: #e53e3e;
+}
+
+.history-time {
+  color: #718096;
+  font-size: 0.75rem;
+  margin-left: 12px;
+  white-space: nowrap;
 }
 
 /* 空状态 */
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 80px 20px;
 }
 
 .empty-icon {
-  font-size: 4rem;
-  margin-bottom: 16px;
+  font-size: 5rem;
+  margin-bottom: 20px;
   opacity: 0.5;
 }
 
 .empty-text {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   color: #2d3748;
   font-weight: 600;
   margin: 0 0 8px 0;
 }
 
 .empty-hint {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   color: #a0aec0;
   margin: 0;
 }
 
-/* 响应式 */
+/* 响应式优化 */
+@media (max-width: 1024px) {
+  .content-wrapper {
+    grid-template-columns: 1fr;
+  }
+  .control-card, .status-card, .result-card, .history-card {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 768px) {
   .spider-page {
-    padding: 20px 16px;
+    padding: 0;
   }
 
   .page-header {
-    padding: 28px 24px;
+    padding: 32px 24px;
     margin-bottom: 24px;
+    margin-top: 16px;
   }
 
   .header-content {
@@ -758,30 +1094,16 @@ onBeforeUnmount(() => {
   .status-grid {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 480px) {
-  .header-icon {
-    width: 60px;
-    height: 60px;
-    font-size: 2rem;
+  .history-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
-  .page-title {
-    font-size: 1.75rem;
-  }
-
-  .page-subtitle {
-    font-size: 1rem;
-  }
-
-  .action-btn {
-    padding: 16px 24px;
-    font-size: 1rem;
-  }
-
-  .btn-text {
-    font-size: 0.9375rem;
+  .history-time {
+    margin-left: 0;
+    margin-top: 4px;
   }
 }
 </style>

@@ -1,43 +1,62 @@
-// src/stores/auth.js
 import { defineStore } from "pinia";
 import { loginApi, profileApi } from "@/api/auth";
-import { setTokens, clearTokens, getAccessToken } from "@/utils/token";
+import {
+  setTokens,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  isTokenExpired,
+} from "@/utils/token";
+import router from "@/router";
 
 export const useAuthStore = defineStore("auth", {
   state: () => ({
     user: null,
     bootstrapped: false,
+    refreshing: false,
   }),
+
   getters: {
-    isAuthed: (s) => !!s.user && !!getAccessToken(),
+    isAuthed: () => !!getAccessToken() && !isTokenExpired(),
   },
+
   actions: {
     async login({ username, password }) {
       const resp = await loginApi({ username, password });
-      if (resp.code !== 0) throw new Error(resp.message || "登录失败");
+      const data = resp.data.data;
 
-      const { user, access_token, refresh_token } = resp.data;
-      setTokens({ access_token, refresh_token });
-      this.user = user;
-      return user;
+      setTokens({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_in: 86400,
+      });
+
+      this.user = data.user;
+      return this.user;
     },
+
     async bootstrap() {
-      // 页面刷新后，尝试用 access token 拉取用户信息
       try {
-        const resp = await profileApi();
-        if (resp.code === 0) this.user = resp.data.user;
+        if (getAccessToken() && !isTokenExpired()) {
+          const resp = await profileApi();
+          this.user = resp.data.data.user;
+        } else if (getRefreshToken()) {
+          // 由 http.js 自动刷新
+          const resp = await profileApi();
+          this.user = resp.data.data.user;
+        }
       } catch {
-        // token 过期会触发 http.js 刷新逻辑；失败则清空
         clearTokens();
         this.user = null;
       } finally {
         this.bootstrapped = true;
       }
     },
+
     logout() {
       clearTokens();
       this.user = null;
+      router.push("/login");
     },
   },
 });
-

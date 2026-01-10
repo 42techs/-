@@ -1,12 +1,13 @@
-// src/api/auth.js
-import http from "./http";
+import http from "@/utils/http";
 
-export async function loginApi(payload) {
-  const res = await http.post("/api/auth/login", payload);
-  return res.data; // {code,message,data}
-}
+export const loginApi = (data) =>
+  http.post("/api/auth/login", data);
 
-export async function profileApi() {
-  const res = await http.get("/api/auth/profile");
-  return res.data;
-}
+export const registerApi = (data) =>
+  http.post("/api/auth/register", data);
+
+export const profileApi = () =>
+  http.get("/api/auth/profile");
+
+export const refreshTokenApi = (data) =>
+  http.post("/api/auth/refresh", data);
