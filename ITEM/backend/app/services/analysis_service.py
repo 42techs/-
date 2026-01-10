@@ -13,6 +13,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 import re
 from typing import Dict, List, Tuple, Optional
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,18 +34,14 @@ class AnalysisService:
         jieba.initialize()
 
     def _load_stop_words(self) -> set:
-        """加载停用词表"""
-        stop_words = set()
+        """加载停用词"""
+        stop_words_path = os.path.join(os.path.dirname(__file__), '..', '..', 'resources', 'stopwords.txt')
         try:
-            # 基础停用词
-            base_stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', 
-                             '不', '人', '都', '一', '一个', '上', '也', '很', 
-                             '到', '说', '要', '去', '你', '会', '着', '没有', 
-                             '看', '好', '自己', '这', '那', '他', '她', '它'}
-            stop_words.update(base_stop_words)
-        except Exception as e:
-            logger.warning(f"加载停用词失败: {e}")
-        
+            with open(stop_words_path, 'r', encoding='utf-8') as f:
+                stop_words = set(f.read().splitlines())
+        except FileNotFoundError:
+            logger.error(f"停用词文件 {stop_words_path} 未找到")
+            stop_words = set()
         return stop_words
 
     def clean_text(self, text: str) -> str:
