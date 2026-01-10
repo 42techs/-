@@ -17,12 +17,11 @@ class WeiboClientConfig:
     max_retries: int = 3
     backoff_base_seconds: float = 1.0
 
-    # headers 里的 cookie 绝对不要写死在代码里，走环境变量/配置更安全
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
     )
-    cookie: str = ""  # 建议从环境变量读进来
+    cookie: str = ""  
     referer: str = "https://weibo.com/hot/weibo/102803"
 
 

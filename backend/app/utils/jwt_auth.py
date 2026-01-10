@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-# app/utils/jwt_auth.py
 from functools import wraps
 from flask import request, g, current_app
 from app.services.auth_service import AuthService

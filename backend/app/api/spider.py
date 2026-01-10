@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, g
 from app.utils.jwt_auth import token_required
 from app.utils.responses import api_ok, api_error
 from app.models.spider_task import SpiderTask
@@ -66,11 +66,19 @@ def start_spider():
     if not current_app.config.get('WEIBO_COOKIE'):
         return api_error('未配置微博Cookie，无法启动爬虫', status_code=400)
     
-    # 检查是否有正在运行的任务
-    running_task = SpiderTask.query.filter_by(status='RUNNING').first()
+    # 获取当前用户ID
+    user_id = g.current_user.id
+    current_app.logger.info(f'用户 {user_id} 请求启动爬虫任务')
+    
+    # 检查当前用户是否有正在运行的任务
+    running_task = SpiderTask.query.filter_by(
+        user_id=user_id,
+        status='RUNNING'
+    ).first()
+    
     if running_task:
         return api_error(
-            '已有爬虫任务正在运行',
+            '您已有爬虫任务正在运行',
             data={'task_id': running_task.id}
         )
     
@@ -79,11 +87,14 @@ def start_spider():
         task_id = str(uuid.uuid4())
         task = SpiderTask(
             id=task_id,
+            user_id=user_id,  # 设置用户ID
             status='PENDING',
             created_at=datetime.utcnow()
         )
         db.session.add(task)
         db.session.commit()
+        
+        current_app.logger.info(f'任务创建成功: {task_id}, 用户: {user_id}')
         
         # 异步执行爬虫任务（使用subprocess）
         script_path = os.path.join(
@@ -91,12 +102,16 @@ def start_spider():
             'app', 'jobs', 'spider_job.py'
         )
         
-        # 后台执行
+        # 后台执行：使用模块方式运行并把工作目录设为项目根（确保可以导入 `app` 包）
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         subprocess.Popen(
-            [sys.executable, script_path, task_id],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            [sys.executable, '-m', 'app.jobs.spider_job', task_id],
+            cwd=project_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
+        
+        current_app.logger.info(f'后台进程已启动: {task_id}')
         
         return api_ok(
             data={
@@ -110,23 +125,25 @@ def start_spider():
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'启动爬虫失败: {e}')
+        current_app.logger.error(f'启动爬虫失败: {e}', exc_info=True)
         return api_error(f'启动爬虫失败: {str(e)}', status_code=500)
 
 
 @spider_bp.route('/tasks', methods=['GET'])
 @token_required
 def get_tasks():
-    """获取任务列表"""
+    """获取任务列表（仅当前用户）"""
     
     try:
+        user_id = g.current_user.id
+        
         # 分页参数
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
         status = request.args.get('status', None, type=str)
         
-        # 构建查询
-        query = SpiderTask.query
+        # 构建查询 - 只查询当前用户的任务
+        query = SpiderTask.query.filter_by(user_id=user_id)
         if status:
             query = query.filter_by(status=status)
         
@@ -139,6 +156,7 @@ def get_tasks():
         
         tasks = [{
             'id': task.id,
+            'user_id': task.user_id,
             'status': task.status,
             'created_at': task.created_at.isoformat() if task.created_at else None,
             'started_at': task.started_at.isoformat() if task.started_at else None,
@@ -162,12 +180,14 @@ def get_tasks():
 @spider_bp.route('/tasks/<task_id>', methods=['GET'])
 @token_required
 def get_task(task_id):
-    """获取任务详情"""
+    """获取任务详情（仅限自己的任务）"""
     
     try:
-        task = SpiderTask.query.get(task_id)
+        user_id = g.current_user.id
+        
+        task = SpiderTask.query.filter_by(id=task_id, user_id=user_id).first()
         if not task:
-            return api_error('任务不存在', status_code=404)
+            return api_error('任务不存在或无权访问', status_code=404)
         
         import json
         result_data = None
@@ -179,6 +199,7 @@ def get_task(task_id):
         
         return api_ok(data={
             'id': task.id,
+            'user_id': task.user_id,
             'status': task.status,
             'created_at': task.created_at.isoformat() if task.created_at else None,
             'started_at': task.started_at.isoformat() if task.started_at else None,
@@ -195,18 +216,22 @@ def get_task(task_id):
 @spider_bp.route('/status', methods=['GET'])
 @token_required
 def get_status():
-    """获取爬虫状态"""
+    """获取爬虫状态（当前用户的统计）"""
     
     try:
-        # 统计任务状态
-        total = SpiderTask.query.count()
-        running = SpiderTask.query.filter_by(status='RUNNING').count()
-        success = SpiderTask.query.filter_by(status='SUCCESS').count()
-        failed = SpiderTask.query.filter_by(status='FAILED').count()
-        pending = SpiderTask.query.filter_by(status='PENDING').count()
+        user_id = g.current_user.id
+        
+        # 统计任务状态 - 仅当前用户
+        total = SpiderTask.query.filter_by(user_id=user_id).count()
+        running = SpiderTask.query.filter_by(user_id=user_id, status='RUNNING').count()
+        success = SpiderTask.query.filter_by(user_id=user_id, status='SUCCESS').count()
+        failed = SpiderTask.query.filter_by(user_id=user_id, status='FAILED').count()
+        pending = SpiderTask.query.filter_by(user_id=user_id, status='PENDING').count()
         
         # 最近一次任务
-        last_task = SpiderTask.query.order_by(SpiderTask.created_at.desc()).first()
+        last_task = SpiderTask.query.filter_by(user_id=user_id).order_by(
+            SpiderTask.created_at.desc()
+        ).first()
         
         last_task_info = None
         if last_task:
@@ -270,8 +295,17 @@ def test_spider():
                         bootstrap_servers=current_app.config['KAFKA_BOOTSTRAP']
                     )
                 )
-                checks['kafka_connected'] = True
-                publisher.close()
+                try:
+                    producer = getattr(publisher, 'producer', None)
+                    if producer and getattr(producer, 'bootstrap_connected', lambda: False)():
+                        checks['kafka_connected'] = True
+                    else:
+                        checks['kafka_connected'] = False
+                except Exception as e:
+                    current_app.logger.error(f'Kafka bootstrap 检查失败: {e}')
+                    checks['kafka_connected'] = False
+                finally:
+                    publisher.close()
             except Exception as e:
                 current_app.logger.error(f'Kafka连接测试失败: {e}')
         

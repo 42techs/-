@@ -26,9 +26,14 @@ def create_app(config_name=None):
     # 注册错误处理器
     register_error_handlers(app)
     
-    # 创建数据库表
-    with app.app_context():
-        db.create_all()
+    # 创建数据库表 (可选跳过，用于测试)
+    if not os.getenv('SKIP_DB_INIT'):
+        try:
+            with app.app_context():
+                db.create_all()
+                app.logger.info("数据库表创建成功")
+        except Exception as e:
+            app.logger.warning(f"数据库表创建失败(可能已存在): {e}")
     
     # 注册关闭钩子
     @app.teardown_appcontext

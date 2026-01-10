@@ -68,7 +68,6 @@ class KafkaPublisher:
             if not parts:
                 return None
             num = len(parts)
-            # 简单 hash
             return (hash(key) & 0x7fffffff) % num
         except Exception:
             return None
