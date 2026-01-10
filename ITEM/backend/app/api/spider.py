@@ -91,11 +91,13 @@ def start_spider():
             'app', 'jobs', 'spider_job.py'
         )
         
-        # 后台执行
+        # 后台执行：使用模块方式运行并把工作目录设为项目根（确保可以导入 `app` 包）
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         subprocess.Popen(
-            [sys.executable, script_path, task_id],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            [sys.executable, '-m', 'app.jobs.spider_job', task_id],
+            cwd=project_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         
         return api_ok(
@@ -270,8 +272,17 @@ def test_spider():
                         bootstrap_servers=current_app.config['KAFKA_BOOTSTRAP']
                     )
                 )
-                checks['kafka_connected'] = True
-                publisher.close()
+                try:
+                    producer = getattr(publisher, 'producer', None)
+                    if producer and getattr(producer, 'bootstrap_connected', lambda: False)():
+                        checks['kafka_connected'] = True
+                    else:
+                        checks['kafka_connected'] = False
+                except Exception as e:
+                    current_app.logger.error(f'Kafka bootstrap 检查失败: {e}')
+                    checks['kafka_connected'] = False
+                finally:
+                    publisher.close()
             except Exception as e:
                 current_app.logger.error(f'Kafka连接测试失败: {e}')
         

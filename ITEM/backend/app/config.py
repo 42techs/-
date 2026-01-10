@@ -7,11 +7,11 @@ class Config:
     
     # Flask基础配置
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    JSON_AS_ASCII = False  # 支持中文JSON输出
+    JSON_AS_ASCII = False  
     
     # MySQL配置（用户认证）
     MYSQL_HOST = os.getenv('MYSQL_HOST', '127.0.0.1')
-    MYSQL_PORT = int(os.getenv('MYSQL_PORT', 3306))
+    MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
     MYSQL_USER = os.getenv('MYSQL_USER', 'root')
     MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'password')
     MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'weibo_auth')
@@ -25,16 +25,19 @@ class Config:
     
     # MongoDB配置（爬虫数据）
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27017')
-    MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'weibo_nlp')
-    
+    MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'weibo_db')
+
     # JWT配置
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 24)))
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 7)))
-    
-    # Kafka配置
-    KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'false').lower() == 'true'
-    KAFKA_BOOTSTRAP = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', '24')))
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', '7')))
+
+    # Kafka配置：支持更多真值表示，保留向后兼容的变量名
+    _KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'true') or 'false'
+    KAFKA_ENABLED = str(_KAFKA_ENABLED).strip().lower() in ('1', 'true', 'yes', 'on')
+    KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+    # 兼容旧名称
+    KAFKA_BOOTSTRAP = KAFKA_BOOTSTRAP_SERVERS
     
     # 微博爬虫配置
     WEIBO_COOKIE = os.getenv('WEIBO_COOKIE', '')
@@ -43,8 +46,14 @@ class Config:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     )
     
-    # CORS配置
-    CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
+    # CORS配置：解析逗号分隔并过滤空项
+    _CORS_RAW = os.getenv('CORS_ORIGINS', '*')
+    if isinstance(_CORS_RAW, str):
+        CORS_ORIGINS = [o.strip() for o in _CORS_RAW.split(',') if o.strip()]
+        if not CORS_ORIGINS:
+            CORS_ORIGINS = ['*']
+    else:
+        CORS_ORIGINS = ['*']
     
     # 日志配置
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
