@@ -90,22 +90,33 @@ class NLPServiceManager:
     ) -> List[Dict]:
         """获取数据"""
         start_date = datetime.now() - timedelta(days=days)
-        
+        start_date_str = start_date.strftime('%Y-%m-%d %H:%M:%S')
+
         if data_type in ('articles', 'article'):
-            query = {'created_at': {'$gte': start_date}}
-            return list(self.db.articles.find(query).sort('created_at', -1))
-        
+            query = {
+                'created_at': {'$gte': start_date_str}
+            }
+            logger.info(f"查询文章: {query}")
+            result = list(self.db.article.find(query).sort('created_at', -1))
+            logger.info(f"找到 {len(result)} 篇文章")
+            return result
+    
         elif data_type in ('comments', 'comment'):
-            query = {'created_at': {'$gte': start_date}}
+            query = {
+                'created_at': {'$gte': start_date_str}
+            }
             if article_id:
                 query['article_id'] = article_id
-            return list(self.db.comments.find(query).sort('created_at', -1))
-        
+            logger.info(f"查询评论: {query}")
+            result = list(self.db.comment.find(query).sort('created_at', -1))
+            logger.info(f"找到 {len(result)} 条评论")
+            return result
+    
         return []
     
     def _load_stop_words(self) -> set:
         """加载停用词"""
-        # 首先尝试从同目录下的 stopwords.txt 加载（每行一个词）
+        # 首先尝试从同目录下的 stopwords.txt 
         try:
             here = os.path.dirname(__file__)
             path = os.path.join(here, 'stopwords.txt')

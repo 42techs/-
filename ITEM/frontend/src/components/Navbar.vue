@@ -1,133 +1,159 @@
 <template>
-  <header class="navbar">
-    <div class="container">
-      <div class="brand">
-        <span class="logo">🚀</span>
-        <span class="title">Weibo NLP</span>
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">
+        <router-link to="/" class="logo">
+          📊 NLP Analysis
+        </router-link>
       </div>
 
-      <nav class="nav">
-        <RouterLink to="/">首页</RouterLink>
-        <RouterLink to="/analysis">分析</RouterLink>
-        <RouterLink to="/spider">爬虫</RouterLink>
-      </nav>
+      <div class="navbar-menu">
+        <router-link to="/" class="nav-link">首页</router-link>
+        <router-link to="/spider" class="nav-link">数据采集</router-link>
+        <router-link to="/analysis" class="nav-link">数据分析</router-link>
+      </div>
 
-      <div class="actions">
-        <span class="user">{{ user?.username }}</span>
-        <button class="logout" @click="onLogout">退出</button>
+      <div class="navbar-actions">
+        <div v-if="isLoggedIn" class="user-info">
+          <span class="username">{{ username }}</span>
+          <button @click="handleLogout" class="btn-logout">退出</button>
+        </div>
+        <router-link v-else to="/auth" class="btn-login">登录</router-link>
       </div>
     </div>
-  </header>
+  </nav>
 </template>
 
 <script setup>
-import { useRouter } from "vue-router";
-import { useAuthStore } from "@/stores/auth";
-import { computed } from "vue";
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
-const router = useRouter();
-const auth = useAuthStore();
-const user = computed(() => auth.user);
+const router = useRouter()
+const authStore = useAuthStore()
 
-function onLogout() {
-  auth.logout();
-  router.replace("/login");
+const isLoggedIn = computed(() => authStore.isLoggedIn)
+const username = computed(() => authStore.username || '用户')
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/auth')
 }
 </script>
 
 <style scoped>
 .navbar {
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  position: sticky; /* 桌面端导航栏固定在顶部 */
+  position: fixed;
   top: 0;
-  z-index: 999;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
 }
 
-.container {
-  max-width: 1440px; /* 扩大桌面端容器宽度 */
+.navbar-container {
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 32px; /* 增加左右内边距 */
-  height: 72px; /* 提升导航栏高度，更适配桌面端 */
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 20px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 16px; /* 增大品牌区间距 */
+.navbar-brand .logo {
+  font-size: 20px;
   font-weight: 700;
-  color: #1a202c;
-}
-
-.logo {
-  font-size: 1.8rem; /* 增大logo尺寸 */
-}
-
-.title {
-  font-size: 1.25rem; /* 增大标题字号 */
-}
-
-.nav {
-  display: flex;
-  gap: 16px; /* 增大导航项间距 */
-}
-
-.nav a {
-  padding: 10px 20px; /* 增大导航项点击区域 */
-  color: #718096;
+  color: #1a1a1a;
   text-decoration: none;
-  border-radius: 8px;
+  transition: color 0.2s;
+}
+
+.logo:hover {
+  color: #3b82f6;
+}
+
+.navbar-menu {
+  display: flex;
+  gap: 30px;
+  flex: 1;
+  justify-content: center;
+}
+
+.nav-link {
+  text-decoration: none;
+  color: #4b5563;
   font-weight: 500;
-  transition: all 0.2s;
-  font-size: 1rem; /* 增大导航文字 */
+  transition: color 0.2s;
+  position: relative;
+  padding: 5px 0;
 }
 
-.nav a:hover {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+.nav-link:hover {
+  color: #3b82f6;
 }
 
-.nav a.router-link-active {
-  color: white;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+.nav-link.router-link-active {
+  color: #3b82f6;
 }
 
-.actions {
+.nav-link.router-link-active::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #3b82f6;
+}
+
+.navbar-actions {
   display: flex;
   align-items: center;
-  gap: 20px; /* 增大操作区间距 */
 }
 
-.user {
-  color: #2d3748;
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.username {
+  color: #374151;
   font-weight: 500;
-  font-size: 1rem; /* 增大用户名文字 */
 }
 
-.logout {
-  padding: 10px 20px; /* 增大按钮点击区域 */
-  background: #f56565;
+.btn-logout,
+.btn-login {
+  padding: 8px 20px;
+  background: #3b82f6;
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 0.9375rem; /* 增大按钮文字 */
-  font-weight: 600;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  font-weight: 500;
+  transition: background 0.2s;
+  text-decoration: none;
+  display: inline-block;
 }
 
-.logout:hover {
-  background: #e53e3e;
-  transform: translateY(-1px);
+.btn-logout:hover,
+.btn-login:hover {
+  background: #2563eb;
 }
 
-/* 桌面端默认显示导航，仅移动端隐藏 */
 @media (max-width: 768px) {
-  .nav {
+  .navbar-menu {
+    gap: 15px;
+  }
+
+  .nav-link {
+    font-size: 14px;
+  }
+
+  .username {
     display: none;
   }
 }

@@ -1,81 +1,33 @@
-// src/api/analysis.js
-import http from '@/utils/http';
+import http from '@/utils/http'
 
 /**
- * 文章分析接口
- * @param {Object} params - {days}
+ * 获取综合分析结果
+ * @param {Object} params - { type: 'articles'|'comments', days: 1-90, article_id?: string }
  */
-export function analyzeArticlesApi(params) {
-  return http.get('/api/analysis/article', { params });
+export const getComprehensiveAnalysis = (params) => {
+  return http.get('/analysis/comprehensive', { params })
 }
 
 /**
- * 评论分析接口
- * @param {Object} params - {days, article_id}
+ * 生成词云图配置
+ * @param {Array} wordData - [{ word, count }]
  */
-export function analyzeCommentsApi(params) {
-  return http.get('/api/analysis/comment', { params });
+export const generateWordCloud = (wordData) => {
+  return http.post('/analysis/charts/word-cloud', { word_data: wordData })
 }
 
 /**
- * 对比分析接口
- * @param {Object} params - {days}
+ * 生成情感饼图配置
+ * @param {Object} sentimentStats - { positive_count, neutral_count, negative_count }
  */
-export function comparativeAnalysisApi(params) {
-  return http.get('/api/analysis/comparative', { params });
+export const generateSentimentPie = (sentimentStats) => {
+  return http.post('/analysis/charts/sentiment-pie', { sentiment_stats: sentimentStats })
 }
 
 /**
- * 词频分析接口
- * @param {Object} params - {type, days, top_n}
+ * 生成时间趋势图配置
+ * @param {Array} dailyData - [{ date, count }]
  */
-export function getWordFrequencyApi(params) {
-  return http.get('/api/analysis/word-frequency', { params });
-}
-
-/**
- * 情感分析接口
- * @param {Object} params - {type, days}
- */
-export function getSentimentAnalysisApi(params) {
-  return http.get('/api/analysis/sentiment', { params });
-}
-
-/**
- * 词云数据接口
- * @param {Object} params - {type, days}
- */
-export function getWordCloudDataApi(params) {
-  return http.get('/api/analysis/word-cloud', { params });
-}
-
-/**
- * 获取分析统计信息
- * @param {Object} params - {days}
- */
-export function getAnalysisStatsApi(params) {
-  return http.get('/api/analysis/stats', { params });
-}
-
-/**
- * 综合分析（一次性返回词频、情感、统计等）
- * @param {Object} params - {type: 'articles'|'comments', days: number, article_id?: string}
- */
-export function comprehensiveAnalysisApi(params) {
-  return http.get('/api/analysis/comprehensive', { params });
-}
-
-/**
- * 导出分析结果
- * @param {Object} data - {analysis_type, days, format}
- */
-export function exportAnalysisApi(data) {
-  return http.post('/api/analysis/export', data);
-}
-
-/**
- * 分析服务健康检查
- */
-export function analysisHealthCheckApi() {
-  return http.get('/api/analysis/health');
+export const generateTemporalLine = (dailyData) => {
+  return http.post('/analysis/charts/temporal-line', { daily_data: dailyData })
 }

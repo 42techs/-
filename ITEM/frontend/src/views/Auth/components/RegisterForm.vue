@@ -135,12 +135,14 @@ const emailValid = computed(() => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email.trim());
 });
 
-// 计算是否有长度错误
+// 计算是否有长度或格式错误
 const hasLengthError = computed(() => {
-  return form.value.username.length > 0 && form.value.username.length < 4 ||
-         form.value.password.length > 0 && form.value.password.length < 6 ||
-         (form.value.confirmPassword.length > 0 && form.value.password !== form.confirmPassword) ||
-         (form.value.email.length > 0 && !emailValid.value);
+  return (
+    (form.value.username.length > 0 && form.value.username.length < 4) ||
+    (form.value.password.length > 0 && form.value.password.length < 6) ||
+    (form.value.confirmPassword.length > 0 && form.value.password !== form.value.confirmPassword) ||
+    (form.value.email.length > 0 && !emailValid.value)
+  );
 });
 
 // 计算是否可以提交
@@ -210,30 +212,32 @@ async function handleRegister() {
     // 2. 调用注册接口
     loading.value = true;
     const response = await registerApi({ username, email, password });
-    
-    // 3. 解析后端响应（兼容两种响应格式）
-    const resData = response.data || response;
-    
-    if (resData.success) {
+
+    // 3. 解析后端响应（兼容多种响应格式）
+    const res = response?.data || response || {};
+    const data = res?.data || res;
+    const ok = res?.success === true || res?.code === 0 || res?.status === 'ok';
+
+    if (ok && data) {
       // 注册成功：存储Token并跳转到登录页
       setTokens({
-        access_token: resData.data.access_token,
-        refresh_token: resData.data.refresh_token,
-        expires_in: resData.data.expires_in || 86400
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_in: data.expires_in || 86400
       });
-      
+
       // 提示用户注册成功
       error.value = "";
       alert("注册成功，请登录"); // 可替换为UI库的Toast组件
-      
+
       // 切换到登录页
       emit("switch-to-login");
-      
+
       // 清空表单
       form.value = { username: "", email: "", password: "", confirmPassword: "" };
     } else {
       // 后端返回的失败信息
-      error.value = resData.message || "注册失败";
+      error.value = res?.message || "注册失败";
       clearTokens();
     }
 

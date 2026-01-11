@@ -1,410 +1,394 @@
-<!-- src/views/Analysis/Analysis.vue -->
 <template>
   <div class="analysis-container">
-    <!-- 查询条件 -->
-    <div class="query-panel">
-      <el-form :model="queryForm" inline>
-        <el-form-item label="数据类型">
-          <el-select v-model="queryForm.data_type">
-            <el-option label="文章" value="articles" />
-            <el-option label="评论" value="comments" />
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item label="时间范围">
-          <el-select v-model="queryForm.days">
-            <el-option label="最近1天" :value="1" />
-            <el-option label="最近7天" :value="7" />
-            <el-option label="最近30天" :value="30" />
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item>
-          <el-button type="primary" @click="handleAnalysis" :loading="loading">
-            开始分析
-          </el-button>
-        </el-form-item>
-      </el-form>
+    <div class="header">
+      <h1>数据分析中心</h1>
+      <p class="subtitle">Social Media NLP Analysis Platform</p>
     </div>
 
-    <!-- 分析结果展示 -->
-    <div v-if="analysisResult" class="analysis-results">
-      <!-- 概览统计 -->
-      <el-row :gutter="20" class="stats-overview">
-        <el-col :span="6">
-          <el-card>
-            <div class="stat-item">
-              <div class="stat-value">{{ analysisResult.total_items }}</div>
-              <div class="stat-label">总数据量</div>
-            </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <div class="stat-item">
-              <div class="stat-value">{{ analysisResult.word_analysis.unique_words }}</div>
-              <div class="stat-label">词汇总数</div>
-            </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <div class="stat-item">
-              <div class="stat-value">{{ analysisResult.sentiment_analysis.statistics.positive_ratio * 100 }}%</div>
-              <div class="stat-label">积极情绪</div>
-            </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card>
-            <div class="stat-item">
-              <div class="stat-value">{{ analysisResult.hotspot_analysis.total_hashtags }}</div>
-              <div class="stat-label">话题数量</div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
+    <!-- 控制面板 -->
+    <div class="control-panel">
+      <div class="filters">
+        <div class="filter-item">
+          <label>数据类型</label>
+          <select v-model="filters.type" @change="loadAnalysis">
+            <option value="articles">文章</option>
+            <option value="comments">评论</option>
+          </select>
+        </div>
 
-      <!-- 词云和关键词 -->
-      <el-row :gutter="20" class="word-analysis">
-        <el-col :span="12">
-          <el-card header="词云分析">
-            <div ref="wordCloudChart" style="height: 300px;"></div>
-          </el-card>
-        </el-col>
-        <el-col :span="12">
-          <el-card header="关键词排行">
-            <el-table :data="analysisResult.word_analysis.keywords_tfidf.slice(0, 10)">
-              <el-table-column prop="word" label="关键词" />
-              <el-table-column prop="weight" label="权重" />
-            </el-table>
-          </el-card>
-        </el-col>
-      </el-row>
+        <div class="filter-item">
+          <label>时间范围</label>
+          <select v-model="filters.days" @change="loadAnalysis">
+            <option :value="1">最近1天</option>
+            <option :value="7">最近7天</option>
+            <option :value="14">最近14天</option>
+            <option :value="30">最近30天</option>
+            <option :value="90">最近90天</option>
+          </select>
+        </div>
 
-      <!-- 情感分析 -->
-      <el-row :gutter="20" class="sentiment-analysis">
-        <el-col :span="8">
-          <el-card header="情感分布">
-            <div ref="sentimentChart" style="height: 300px;"></div>
-          </el-card>
-        </el-col>
-        <el-col :span="8">
-          <el-card header="情感强度">
-            <el-table :data="sentimentIntensityData">
-              <el-table-column prop="intensity" label="强度" />
-              <el-table-column prop="count" label="数量" />
-            </el-table>
-          </el-card>
-        </el-col>
-        <el-col :span="8">
-          <el-card header="情感统计">
-            <div class="sentiment-stats">
-              <div v-for="stat in sentimentStats" :key="stat.label" class="stat-row">
-                <span>{{ stat.label }}:</span>
-                <span>{{ stat.value }}</span>
-              </div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
+        <div class="filter-item" v-if="filters.type === 'comments'">
+          <label>文章ID（可选）</label>
+          <input 
+            v-model="filters.articleId" 
+            type="text" 
+            placeholder="输入文章ID"
+            @blur="loadAnalysis"
+          />
+        </div>
 
-      <!-- 时间趋势 -->
-      <el-row :gutter="20">
-        <el-col :span="24">
-          <el-card header="时间趋势分析">
-            <div ref="temporalChart" style="height: 400px;"></div>
-          </el-card>
-        </el-col>
-      </el-row>
+        <button 
+          class="btn-refresh" 
+          @click="loadAnalysis"
+          :disabled="loading"
+        >
+          {{ loading ? '分析中...' : '刷新分析' }}
+        </button>
+      </div>
 
-      <!-- 热点话题 -->
-      <el-row :gutter="20">
-        <el-col :span="12">
-          <el-card header="热门话题">
-            <el-table :data="analysisResult.hotspot_analysis.trending_hashtags.slice(0, 10)">
-              <el-table-column prop="hashtag" label="话题" />
-              <el-table-column prop="count" label="出现次数" />
-            </el-table>
-          </el-card>
-        </el-col>
-        <el-col :span="12">
-          <el-card header="@用户排行">
-            <el-table :data="analysisResult.hotspot_analysis.trending_mentions.slice(0, 10)">
-              <el-table-column prop="mention" label="用户" />
-              <el-table-column prop="count" label="被@次数" />
-            </el-table>
-          </el-card>
-        </el-col>
-      </el-row>
+      <div class="stats-bar" v-if="analysisData">
+        <div class="stat-card">
+          <div class="stat-label">总数据量</div>
+          <div class="stat-value">{{ analysisData.total_items || 0 }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">分析时间</div>
+          <div class="stat-value">{{ formatDate(analysisData.analysis_timestamp) }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">数据类型</div>
+          <div class="stat-value">{{ filters.type === 'articles' ? '文章' : '评论' }}</div>
+        </div>
+      </div>
+    </div>
 
-      <!-- 主题分析 -->
-      <el-row :gutter="20">
-        <el-col :span="24">
-          <el-card header="主题分析">
-            <el-collapse v-model="activeTopics">
-              <el-collapse-item 
-                v-for="topic in analysisResult.topic_analysis.topics" 
-                :key="topic.topic_id"
-                :name="topic.topic_id"
-                :title="`${topic.topic_name} (包含文档: ${getTopicDocCount(topic.topic_id)})`"
-              >
-                <div class="topic-keywords">
-                  <el-tag 
-                    v-for="keyword in topic.keywords" 
-                    :key="keyword.word"
-                    type="info"
-                    size="small"
-                    class="keyword-tag"
-                  >
-                    {{ keyword.word }} ({{ keyword.weight }})
-                  </el-tag>
-                </div>
-              </el-collapse-item>
-            </el-collapse>
-          </el-card>
-        </el-col>
-      </el-row>
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+      <p>正在分析数据，请稍候...</p>
+    </div>
+
+    <!-- 错误状态 -->
+    <div v-else-if="error" class="error-state">
+      <p>{{ error }}</p>
+      <button @click="loadAnalysis">重试</button>
+    </div>
+
+    <!-- 分析结果 -->
+    <div v-else-if="analysisData" class="analysis-content">
+      <!-- 标签页导航 -->
+      <div class="tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.key"
+          :class="['tab', { active: activeTab === tab.key }]"
+          @click="activeTab = tab.key"
+        >
+          <span class="tab-icon">{{ tab.icon }}</span>
+          <span class="tab-label">{{ tab.label }}</span>
+        </button>
+      </div>
+
+      <!-- 标签页内容 -->
+      <div class="tab-content">
+        <WordFrequencyAnalysis 
+          v-show="activeTab === 'word'"
+          :data="analysisData.word_analysis"
+        />
+        
+        <SentimentAnalysis 
+          v-show="activeTab === 'sentiment'"
+          :data="analysisData.sentiment_analysis"
+        />
+        
+        <TopicAnalysis 
+          v-show="activeTab === 'topic'"
+          :data="analysisData.topic_analysis"
+        />
+        
+        <TemporalAnalysis 
+          v-show="activeTab === 'temporal'"
+          :data="analysisData.temporal_analysis"
+        />
+        
+        <HotspotAnalysis 
+          v-show="activeTab === 'hotspot'"
+          :data="analysisData.hotspot_analysis"
+        />
+      </div>
+    </div>
+
+    <!-- 空状态 -->
+    <div v-else class="empty-state">
+      <p>👆 选择条件后点击"刷新分析"开始分析</p>
     </div>
   </div>
 </template>
 
-<script>
-import { analysisAPI } from '@/api/analysis'
-import * as echarts from 'echarts'
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { getComprehensiveAnalysis } from '@/api/analysis'
+import WordFrequencyAnalysis from './components/WordFrequencyAnalysis.vue'
+import SentimentAnalysis from './components/SentimentAnalysis.vue'
+import TopicAnalysis from './components/TopicAnalysis.vue'
+import TemporalAnalysis from './components/TemporalAnalysis.vue'
+import HotspotAnalysis from './components/HotspotAnalysis.vue'
 
-export default {
-  name: 'AnalysisPage',
-  data() {
-    return {
-      loading: false,
-      queryForm: {
-        data_type: 'articles',
-        days: 7
-      },
-      analysisResult: null,
-      activeTopics: [],
-      charts: {
-        wordCloud: null,
-        sentiment: null,
-        temporal: null
-      }
+const loading = ref(false)
+const error = ref(null)
+const analysisData = ref(null)
+const activeTab = ref('word')
+
+const filters = reactive({
+  type: 'articles',
+  days: 7,
+  articleId: ''
+})
+
+const tabs = [
+  { key: 'word', label: '词频分析', icon: '📊' },
+  { key: 'sentiment', label: '情感分析', icon: '❤️' },
+  { key: 'topic', label: '主题建模', icon: '🧠' },
+  { key: 'temporal', label: '时间趋势', icon: '📈' },
+  { key: 'hotspot', label: '热点分析', icon: '🔥' }
+]
+
+const loadAnalysis = async () => {
+  loading.value = true
+  error.value = null
+
+  try {
+    const params = {
+      type: filters.type,
+      days: filters.days
     }
-  },
-  computed: {
-    // 情感强度数据
-    sentimentIntensityData() {
-      if (!this.analysisResult) return []
-      const intensityMap = {}
-      this.analysisResult.sentiment_analysis.detailed_results.forEach(item => {
-        intensityMap[item.sentiment_intensity] = (intensityMap[item.sentiment_intensity] || 0) + 1
-      })
-      return Object.keys(intensityMap).map(key => ({
-        intensity: this.getIntensityLabel(key),
-        count: intensityMap[key]
-      }))
-    },
     
-    // 情感统计数据
-    sentimentStats() {
-      if (!this.analysisResult) return []
-      const stats = this.analysisResult.sentiment_analysis.statistics
-      return [
-        { label: '平均情感分', value: stats.average_sentiment },
-        { label: '积极内容', value: stats.positive_count },
-        { label: '消极内容', value: stats.negative_count },
-        { label: '中性内容', value: stats.neutral_count }
-      ]
+    if (filters.type === 'comments' && filters.articleId) {
+      params.article_id = filters.articleId
     }
-  },
-  methods: {
-    // 执行分析
-    async handleAnalysis() {
-      this.loading = true
-      try {
-        const response = await analysisAPI.comprehensiveAnalysis(this.queryForm)
-        if (response.success) {
-          this.analysisResult = response.data
-          this.$nextTick(() => {
-            this.renderCharts()
-          })
-        } else {
-          this.$message.error(response.message || '分析失败')
-        }
-      } catch (error) {
-        this.$message.error('分析请求失败')
-        console.error('Analysis error:', error)
-      } finally {
-        this.loading = false
-      }
-    },
 
-    // 渲染图表
-    renderCharts() {
-      this.renderWordCloud()
-      this.renderSentimentChart()
-      this.renderTemporalChart()
-    },
+    console.log('发送分析请求，参数:', params)
 
-    // 词云图
-    renderWordCloud() {
-      if (this.charts.wordCloud) {
-        this.charts.wordCloud.dispose()
+    const response = await getComprehensiveAnalysis(params)
+    
+    console.log('原始响应:', response)
+    
+    // 🔧 关键修复：正确解析响应结构
+    // 响应格式: { success: true, data: {...}, message: '...' }
+    if (response.success) {
+      analysisData.value = response.data
+      console.log('分析数据:', analysisData.value)
+      
+      // 检查是否有有效数据
+      if (analysisData.value.total_items === 0) {
+        error.value = analysisData.value.message || '暂无数据'
       }
-      
-      const chartDom = this.$refs.wordCloudChart
-      this.charts.wordCloud = echarts.init(chartDom)
-      
-      const wordData = this.analysisResult.word_analysis.word_frequency.slice(0, 50)
-      const option = {
-        series: [{
-          type: 'wordCloud',
-          data: wordData,
-          sizeRange: [12, 60],
-          rotationRange: [-45, 90],
-          gridSize: 8
-        }]
-      }
-      
-      this.charts.wordCloud.setOption(option)
-    },
-
-    // 情感分布图
-    renderSentimentChart() {
-      if (this.charts.sentiment) {
-        this.charts.sentiment.dispose()
-      }
-      
-      const chartDom = this.$refs.sentimentChart
-      this.charts.sentiment = echarts.init(chartDom)
-      
-      const stats = this.analysisResult.sentiment_analysis.statistics
-      const option = {
-        tooltip: {
-          trigger: 'item'
-        },
-        series: [{
-          type: 'pie',
-          radius: ['40%', '70%'],
-          data: [
-            { value: stats.positive_count, name: '积极' },
-            { value: stats.negative_count, name: '消极' },
-            { value: stats.neutral_count, name: '中性' }
-          ]
-        }]
-      }
-      
-      this.charts.sentiment.setOption(option)
-    },
-
-    // 时间趋势图
-    renderTemporalChart() {
-      if (this.charts.temporal) {
-        this.charts.temporal.dispose()
-      }
-      
-      const chartDom = this.$refs.temporalChart
-      this.charts.temporal = echarts.init(chartDom)
-      
-      const dailyData = this.analysisResult.temporal_analysis.daily_distribution
-      const option = {
-        tooltip: {
-          trigger: 'axis'
-        },
-        xAxis: {
-          type: 'category',
-          data: dailyData.map(item => item.date)
-        },
-        yAxis: {
-          type: 'value'
-        },
-        series: [{
-          data: dailyData.map(item => item.count),
-          type: 'line',
-          smooth: true
-        }]
-      }
-      
-      this.charts.temporal.setOption(option)
-    },
-
-    // 获取主题文档数量
-    getTopicDocCount(topicId) {
-      const dist = this.analysisResult.topic_analysis.doc_topic_distribution
-      return dist[`topic_${topicId}`] || 0
-    },
-
-    // 情感强度标签
-    getIntensityLabel(intensity) {
-      const labels = {
-        strong: '强烈',
-        moderate: '中等',
-        weak: '微弱'
-      }
-      return labels[intensity] || intensity
+    } else {
+      error.value = response.message || '分析失败'
+      console.error('分析失败:', response)
     }
-  },
-
-  beforeUnmount() {
-    // 销毁图表实例
-    Object.values(this.charts).forEach(chart => {
-      if (chart) chart.dispose()
-    })
+  } catch (err) {
+    console.error('分析请求错误:', err)
+    
+    // 显示详细错误信息
+    if (err.message) {
+      error.value = err.message
+    } else if (err.data?.message) {
+      error.value = err.data.message
+    } else {
+      error.value = '分析失败，请查看控制台获取详细信息'
+    }
+  } finally {
+    loading.value = false
   }
 }
+
+const formatDate = (timestamp) => {
+  if (!timestamp) return '-'
+  return new Date(timestamp).toLocaleString('zh-CN')
+}
+
+onMounted(() => {
+  // 可以自动加载一次
+  // loadAnalysis()
+})
 </script>
 
 <style scoped>
 .analysis-container {
+  max-width: 1400px;
+  margin: 0 auto;
   padding: 20px;
 }
 
-.query-panel {
-  margin-bottom: 20px;
-  padding: 20px;
-  background: #f5f7fa;
-  border-radius: 4px;
-}
-
-.stats-overview {
-  margin-bottom: 20px;
-}
-
-.stat-item {
+.header {
   text-align: center;
-  padding: 10px;
+  margin-bottom: 30px;
+}
+
+.header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: #666;
+  font-size: 14px;
+}
+
+.control-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.filters {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-item label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.filter-item select,
+.filter-item input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 150px;
+}
+
+.btn-refresh {
+  padding: 8px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-refresh:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+}
+
+.stat-label {
+  font-size: 12px;
+  opacity: 0.9;
+  margin-bottom: 5px;
 }
 
 .stat-value {
   font-size: 24px;
-  font-weight: bold;
-  color: #409EFF;
+  font-weight: 700;
 }
 
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 5px;
+.loading-state,
+.error-state,
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-.sentiment-stats {
-  padding: 10px;
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
 }
 
-.stat-row {
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.tabs {
   display: flex;
-  justify-content: space-between;
-  margin: 8px 0;
-  font-size: 14px;
+  gap: 10px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  padding-bottom: 5px;
 }
 
-.topic-keywords {
+.tab {
+  padding: 12px 20px;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
-.keyword-tag {
-  margin: 2px;
+.tab:hover {
+  border-color: #3b82f6;
+}
+
+.tab.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.tab-icon {
+  font-size: 18px;
+}
+
+.tab-label {
+  font-weight: 500;
+}
+
+.tab-content {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  min-height: 500px;
 }
 </style>
+

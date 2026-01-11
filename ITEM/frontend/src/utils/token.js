@@ -1,87 +1,68 @@
-// src/utils/token.js
-const ACCESS_KEY = "access_token";
-const REFRESH_KEY = "refresh_token";
-const EXPIRE_KEY = "token_expire";
+const TOKEN_KEY = 'access_token'
+const REFRESH_TOKEN_KEY = 'refresh_token'
+const EXPIRES_KEY = 'token_expires_at'
 
-/**
- * 获取Access Token
- * @returns {string|null}
- */
-export function getAccessToken() {
-  try {
-    return localStorage.getItem(ACCESS_KEY);
-  } catch (e) {
-    console.error('获取Access Token失败：', e);
-    return null;
+// 基础 token 操作
+export const getToken = () => {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export const setToken = (token) => {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export const removeToken = () => {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+// 新增：兼容旧代码的别名
+export const getAccessToken = () => {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export const setAccessToken = (token) => {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+// Refresh Token 操作
+export const getRefreshToken = () => {
+  return localStorage.getItem(REFRESH_TOKEN_KEY)
+}
+
+export const setRefreshToken = (token) => {
+  localStorage.setItem(REFRESH_TOKEN_KEY, token)
+}
+
+// 批量设置 tokens
+export const setTokens = (tokens) => {
+  if (tokens.access_token) {
+    localStorage.setItem(TOKEN_KEY, tokens.access_token)
+  }
+  if (tokens.refresh_token) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token)
+  }
+  if (tokens.expires_in) {
+    const expiresAt = Date.now() + tokens.expires_in * 1000
+    localStorage.setItem(EXPIRES_KEY, expiresAt.toString())
   }
 }
 
-/**
- * 获取Refresh Token
- * @returns {string|null}
- */
-export function getRefreshToken() {
-  try {
-    return localStorage.getItem(REFRESH_KEY);
-  } catch (e) {
-    console.error('获取Refresh Token失败：', e);
-    return null;
-  }
+// 清除所有 tokens
+export const clearTokens = () => {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  localStorage.removeItem(EXPIRES_KEY)
 }
 
-/**
- * 设置Token（兼容后端未返回expires_in的情况）
- * @param {Object} params - Token参数
- * @param {string} params.access_token - Access Token
- * @param {string} params.refresh_token - Refresh Token
- * @param {number} [params.expires_in] - 过期时间（秒），默认3600秒
- */
-export function setTokens({ access_token, refresh_token, expires_in }) {
-  try {
-    if (access_token) localStorage.setItem(ACCESS_KEY, access_token);
-    if (refresh_token) localStorage.setItem(REFRESH_KEY, refresh_token);
-    
-  // 计算过期时间（毫秒），默认24小时（与后端默认保持一致）
-  const expireSeconds = expires_in || 86400;
-    const expireTime = Date.now() + expireSeconds * 1000;
-    localStorage.setItem(EXPIRE_KEY, expireTime.toString()); // 修复：存储为字符串避免NaN
-  } catch (e) {
-    console.error('设置Token失败：', e);
-  }
+// Token 过期检查
+export const isTokenExpired = () => {
+  const expiresAt = localStorage.getItem(EXPIRES_KEY)
+  if (!expiresAt) return true
+  return Date.now() > parseInt(expiresAt)
 }
 
-/**
- * 清空所有Token
- */
-export function clearTokens() {
-  try {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem(EXPIRE_KEY);
-  } catch (e) {
-    console.error('清空Token失败：', e);
-  }
-}
-
-/**
- * 判断Token是否过期（增强容错）
- * @returns {boolean} true=过期，false=未过期
- */
-export function isTokenExpired() {
-  try {
-    const expireTimeStr = localStorage.getItem(EXPIRE_KEY);
-    // 无过期时间 → 判定为未过期（开发阶段兜底）
-    if (!expireTimeStr) return false;
-    
-    const expireTime = Number(expireTimeStr);
-    // 非有效数字 → 判定为未过期
-    if (isNaN(expireTime)) return false;
-    
-    // 提前30秒过期（缓冲时间）
-    const now = Date.now();
-    return now > expireTime - 30 * 1000;
-  } catch (e) {
-    console.error('判定Token过期状态失败：', e);
-    return false; // 异常时默认未过期，避免误退出
-  }
+// 获取 Token 过期时间
+export const getTokenExpiration = () => {
+  const expiresAt = localStorage.getItem(EXPIRES_KEY)
+  return expiresAt ? parseInt(expiresAt) : null
 }
