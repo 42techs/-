@@ -2,7 +2,8 @@ import axios from 'axios'
 import { getToken } from './token'
 
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  // 使用完整的后端地址，包含协议和端口
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://10.244.181.48:5000/api', 
   timeout: 300000,
   headers: {
     'Content-Type': 'application/json'

@@ -131,7 +131,6 @@ async function handleLogin() {
     const response = await loginApi({ username, password });
     console.log('登录接口返回：', response);
     
-    // 严格解析后端响应（适配api_ok返回格式）
     if (response.success) {
       // 存储Token到本地（对齐后端返回的data结构）
       setTokens({
@@ -139,16 +138,21 @@ async function handleLogin() {
         refresh_token: response.data.refresh_token,
         expires_in: response.data.expires_in || 86400 // 优先使用后端返回的过期时间
       });
-      
+
       // 同步更新auth store状态（核心修复：之前缺失）
-      authStore.user = response.data.user || { username };
-      
-  // 跳转到首页（支持redirect参数）
-  // router.currentRoute 是一个 ref，在 setup 外直接访问会导致 undefined，
-  // 在组件中使用 useRoute() 更安全
-  const redirect = route?.query?.redirect || "/";
-  await router.push(redirect);
-      
+      authStore.login({
+        access_token: response.data.access_token,
+        refresh_token: response.data.refresh_token,
+        user: response.data.user || { username }
+      });
+
+      // 存储用户信息到 localStorage
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+
+      // 跳转到首页（支持redirect参数）
+      const redirect = route?.query?.redirect || "/";
+      await router.push(redirect);
+
       // 清空表单
       form.value = { username: "", password: "" };
     } else {
@@ -156,9 +160,7 @@ async function handleLogin() {
       error.value = response.message || "登录失败";
       clearTokens();
     }
-
   } catch (err) {
-    // 捕获所有错误（包括过滤后的401错误）
     const errMsg = err.message || "登录失败，请稍后重试";
     console.error("登录错误：", errMsg);
     error.value = errMsg;

@@ -86,6 +86,12 @@
       {{ error }}
     </div>
 
+    <!-- 成功提示（新增） -->
+    <div v-if="successMsg" class="success-message">
+      <span class="success-icon">✅</span>
+      {{ successMsg }}
+    </div>
+
     <!-- 注册按钮 -->
     <button
       type="submit"
@@ -111,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { registerApi } from "@/api/auth";
 import { setTokens, clearTokens } from "@/utils/token";
@@ -129,6 +135,7 @@ const form = ref({
 });
 const loading = ref(false);
 const error = ref("");
+const successMsg = ref(""); // 新增：注册成功提示
 
 // 邮箱格式校验
 const emailValid = computed(() => {
@@ -158,20 +165,25 @@ const clearError = () => {
   if (error.value) {
     error.value = "";
   }
+  if (successMsg.value) {
+    successMsg.value = ""; // 清空成功提示
+  }
 };
 
 /**
- * 处理注册逻辑（严格对齐后端响应格式）
+ * 处理注册逻辑（修复响应解析错误 + 优化用户体验）
  */
 async function handleRegister() {
   try {
+    // 重置提示
+    error.value = "";
+    successMsg.value = "";
+
     // 1. 前置校验（和后端保持一致）
     const username = form.value.username.trim();
     const email = form.value.email.trim();
     const password = form.value.password.trim();
     const confirmPassword = form.value.confirmPassword.trim();
-    
-    error.value = "";
 
     // 空值校验
     if (!username) {
@@ -211,41 +223,49 @@ async function handleRegister() {
 
     // 2. 调用注册接口
     loading.value = true;
+    // 打印请求参数（调试用）
+    console.log("注册请求参数：", { username, email, password });
     const response = await registerApi({ username, email, password });
+    // 打印完整响应（调试用）
+    console.log("注册接口响应：", response);
 
-    // 3. 解析后端响应（兼容多种响应格式）
-    const res = response?.data || response || {};
-    const data = res?.data || res;
-    const ok = res?.success === true || res?.code === 0 || res?.status === 'ok';
+    // 3. 正确解析后端响应（核心修复！）
+    // 后端直接返回完整响应，无需再取response.data
+    const res = response || {};
+    // 正确判断注册成功：success=true 或 code=0
+    const isSuccess = res.success === true || res.code === 0;
 
-    if (ok && data) {
-      // 注册成功：存储Token并跳转到登录页
+    if (isSuccess && res.data) {
+      // 注册成功逻辑
+      // 存储Token到本地
       setTokens({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_in: data.expires_in || 86400
+        access_token: res.data.access_token,
+        refresh_token: res.data.refresh_token,
+        expires_in: res.data.expires_in || 86400
       });
 
-      // 提示用户注册成功
+      // 显示成功提示
+      successMsg.value = res.message || "注册成功！即将为您跳转到登录页...";
       error.value = "";
-      alert("注册成功，请登录"); // 可替换为UI库的Toast组件
 
-      // 切换到登录页
-      emit("switch-to-login");
-
-      // 清空表单
-      form.value = { username: "", email: "", password: "", confirmPassword: "" };
+      // 优化体验：延迟1.5秒后切换到登录页
+      setTimeout(() => {
+        emit("switch-to-login");
+        // 清空表单
+        form.value = { username: "", email: "", password: "", confirmPassword: "" };
+      }, 1500);
     } else {
-      // 后端返回的失败信息
-      error.value = res?.message || "注册失败";
+      // 后端返回的业务失败
+      error.value = res.message || "注册失败，请稍后重试";
       clearTokens();
     }
 
   } catch (err) {
-    // 核心：透传后端错误信息
-    const errMsg = err.message || "注册失败，请稍后重试";
+    // 捕获网络/接口错误
+    const errMsg = err.message || "注册失败，请检查网络或稍后重试";
     console.error("注册失败详情：", err);
     error.value = errMsg;
+    successMsg.value = "";
     clearTokens();
   } finally {
     loading.value = false;
@@ -309,6 +329,7 @@ async function handleRegister() {
   color: #e53e3e;
 }
 
+/* 错误提示样式 */
 .error-message {
   padding: 12px 16px;
   background: linear-gradient(135deg, #fed7d7, #feb2b2);
@@ -321,7 +342,24 @@ async function handleRegister() {
   font-weight: 500;
 }
 
+/* 新增：成功提示样式 */
+.success-message {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #c6f6d5, #9ae6b4);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #22543d;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 .error-icon {
+  font-size: 1rem;
+}
+
+.success-icon {
   font-size: 1rem;
 }
 

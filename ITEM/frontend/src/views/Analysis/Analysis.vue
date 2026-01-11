@@ -10,7 +10,8 @@
       <div class="filters">
         <div class="filter-item">
           <label>数据类型</label>
-          <select v-model="filters.type" @change="loadAnalysis">
+          <!-- 移除@change事件，仅依赖按钮点击 -->
+          <select v-model="filters.type">
             <option value="articles">文章</option>
             <option value="comments">评论</option>
           </select>
@@ -18,7 +19,7 @@
 
         <div class="filter-item">
           <label>时间范围</label>
-          <select v-model="filters.days" @change="loadAnalysis">
+          <select v-model="filters.days">
             <option :value="1">最近1天</option>
             <option :value="7">最近7天</option>
             <option :value="14">最近14天</option>
@@ -33,10 +34,10 @@
             v-model="filters.articleId" 
             type="text" 
             placeholder="输入文章ID"
-            @blur="loadAnalysis"
           />
         </div>
 
+        <!-- 仅点击按钮时执行分析 -->
         <button 
           class="btn-refresh" 
           @click="loadAnalysis"
