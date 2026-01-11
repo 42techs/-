@@ -8,17 +8,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .client import WeiboClient
 from .parser import WeiboParser
-from .publisher import KafkaPublisher
+from .publisher import NullPublisher
 from .repository import MongoRepository
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SpiderTopics:
-    arctype: str = "weibo_arctype"
-    article: str = "weibo_article"
-    comment: str = "weibo_comment"
 
 
 @dataclass
@@ -31,10 +24,9 @@ class SpiderStats:
 
 class SpiderService:
     """
-    只负责编排：
+    爬虫服务 - 简化版(仅MongoDB存储)
     - client 拉数据
     - parser 解析
-    - publisher 发 kafka
     - repo 写 mongo
     """
 
@@ -42,48 +34,54 @@ class SpiderService:
         self,
         client: WeiboClient,
         parser: WeiboParser,
-        publisher: KafkaPublisher,
         repo: MongoRepository,
-        topics: SpiderTopics = SpiderTopics(),
     ):
         self.client = client
         self.parser = parser
-        self.publisher = publisher
         self.repo = repo
-        self.topics = topics
         self.stats = SpiderStats()
 
-        # 缓存：建议改成外部存储（Redis/Mongo），这里先保留“任务内缓存”
+        logger.info("SpiderService 初始化: 仅MongoDB存储模式")
+
+        # 缓存
         self.article_seen: set[str] = set()
         self.arctypes: List[Dict[str, Any]] = []
 
     def crawl_arctype(self) -> Tuple[bool, List[Dict[str, Any]]]:
+        """爬取文章类型"""
         url = "https://weibo.com/ajax/feed/allGroups"
         json_data = self.client.get_json(url, params={})
         if not json_data:
             self.stats.failed_count += 1
+            logger.error("获取文章类型失败")
             return False, []
 
         arctypes = self.parser.parse_arctypes(json_data)
         if not arctypes:
             self.stats.failed_count += 1
+            logger.warning("解析文章类型为空")
             return False, []
 
         out: List[Dict[str, Any]] = []
         for a in arctypes:
-            ok_k = self.publisher.send(self.topics.arctype, key=a["gid"], value=a)
+            # 仅存储到MongoDB
             ok_m = self.repo.upsert("arctype", a, id_field="gid", id_prefix="arctype")
-            if ok_k and ok_m:
+            if ok_m:
                 out.append(a)
                 self.stats.arctype_count += 1
+                logger.info(f"保存文章类型: {a['title']}")
             else:
                 self.stats.failed_count += 1
+                logger.error(f"保存文章类型失败: {a['title']}")
 
         self.arctypes = out
+        logger.info(f"文章类型爬取完成,共 {len(out)} 个")
         return True, out
 
     def crawl_articles(self) -> Tuple[bool, List[Dict[str, Any]]]:
+        """爬取文章"""
         if not self.arctypes:
+            logger.warning("文章类型列表为空,跳过文章爬取")
             return False, []
 
         url = "https://weibo.com/ajax/feed/hottimeline"
@@ -97,9 +95,11 @@ class SpiderService:
                 "extparam": "discover|new_feed",
             }
 
+            logger.info(f"正在爬取类型: {arctype['title']}")
             json_data = self.client.get_json(url, params=params)
             if not json_data:
                 self.stats.failed_count += 1
+                logger.error(f"获取文章失败: {arctype['title']}")
                 continue
 
             articles = self.parser.parse_articles(json_data, arctype_title=arctype["title"])
@@ -108,35 +108,38 @@ class SpiderService:
                     continue
                 self.article_seen.add(art["id"])
 
-                # 分区：可选（拿不到就交给 Kafka）
-                partition = None
-                if art.get("author_id"):
-                    partition = self.publisher.partition_for_key(self.topics.article, art["author_id"])
-
-                ok_k = self.publisher.send(self.topics.article, key=art["id"], value=art, partition=partition)
+                # 仅存储到MongoDB
                 ok_m = self.repo.upsert("article", art, id_field="id", id_prefix="article")
 
-                if ok_k and ok_m:
+                if ok_m:
                     all_articles.append(art)
                     self.stats.article_count += 1
                 else:
                     self.stats.failed_count += 1
 
+            logger.info(f"类型 {arctype['title']} 爬取完成,获得 {len(articles)} 篇文章")
+
+        logger.info(f"文章爬取完成,共 {len(all_articles)} 篇")
         return True, all_articles
 
     def crawl_comments(self, articles: List[Dict[str, Any]]) -> Tuple[bool, int]:
+        """爬取评论"""
         if not articles:
+            logger.warning("文章列表为空,跳过评论爬取")
             return False, 0
 
         url = "https://weibo.com/ajax/statuses/buildComments"
         total = 0
 
-        for art in articles:
+        for idx, art in enumerate(articles):
             time.sleep(1)
             params = {"id": art["id"], "is_show_bulletin": 2}
+            
+            logger.info(f"正在爬取评论 [{idx+1}/{len(articles)}]: {art['text_raw'][:30]}...")
             json_data = self.client.get_json(url, params=params)
             if not json_data:
                 self.stats.failed_count += 1
+                logger.error(f"获取评论失败: {art['id']}")
                 continue
 
             comments = self.parser.parse_comments(
@@ -146,56 +149,64 @@ class SpiderService:
             )
 
             for c in comments:
-                partition = None
-                if c.get("author_id"):
-                    partition = self.publisher.partition_for_key(self.topics.comment, c["author_id"])
-
-                ok_k = self.publisher.send(self.topics.comment, key=c["id"], value=c, partition=partition)
+                # 仅存储到MongoDB
                 ok_m = self.repo.upsert("comment", c, id_field="id", id_prefix="comment")
 
-                if ok_k and ok_m:
+                if ok_m:
                     total += 1
                     self.stats.comment_count += 1
                 else:
                     self.stats.failed_count += 1
 
+            if comments:
+                logger.info(f"获得 {len(comments)} 条评论")
+
+        logger.info(f"评论爬取完成,共 {total} 条")
         return True, total
 
-    def run_spider(self) -> Dict[str, Any]:
+    def run_spider(self, **kwargs) -> Dict[str, Any]:
+        """执行爬虫任务"""
         start = time.time()
+        
+        logger.info(f"爬虫任务开始,参数: {kwargs}")
+        
         try:
+            # 爬取文章类型
             ok, _ = self.crawl_arctype()
             if not ok:
                 return {"success": False, "message": "文章类型爬取失败"}
 
+            # 爬取文章
             ok, articles = self.crawl_articles()
             if not ok:
                 return {"success": False, "message": "文章爬取失败"}
 
+            # 爬取评论
             self.crawl_comments(articles)
 
-            self.publisher.flush()
+            elapsed = round(time.time() - start, 2)
+            logger.info(f"爬虫任务完成,耗时 {elapsed}s")
 
             return {
                 "success": True,
                 "message": "爬虫任务完成",
+                "params_received": kwargs,
                 "data": {
                     "arctype_count": self.stats.arctype_count,
                     "article_count": self.stats.article_count,
                     "comment_count": self.stats.comment_count,
                     "failed_count": self.stats.failed_count,
-                    "elapsed_time": round(time.time() - start, 2),
+                    "elapsed_time": elapsed,
                 },
             }
         except Exception as e:
-            logger.exception("run_spider error: %s", e)
+            logger.exception(f"爬虫任务异常: {e}")
             return {"success": False, "message": f"爬虫运行异常: {str(e)}"}
         finally:
-            # 资源释放
-            self.publisher.close()
             self.repo.close()
 
     def get_status(self) -> Dict[str, Any]:
+        """获取爬虫状态"""
         return {
             "status": "ready",
             "stats": self.stats.__dict__,

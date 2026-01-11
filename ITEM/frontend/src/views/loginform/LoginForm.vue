@@ -11,7 +11,8 @@
         type="text"
         class="form-input"
         placeholder="请输入用户名"
-        required
+        :class="{ 'input-error': error && (error.includes('用户名') || error.includes('不存在')) }"
+        @input="clearError"
       />
     </div>
 
@@ -25,13 +26,18 @@
         v-model="form.password"
         type="password"
         class="form-input"
-        placeholder="请输入密码"
-        required
+        placeholder="请输入密码（至少6位）"
+        :class="{ 'input-error': error && (error.includes('密码') || error.includes('错误')) }"
+        @input="clearError"
       />
+      <!-- 密码长度提示 -->
+      <div v-if="form.password.length > 0 && form.password.length < 6" class="tips-text error-tips">
+        密码长度不能少于6位
+      </div>
     </div>
 
     <!-- 错误提示 -->
-    <div v-if="error" class="error-message">
+    <div v-if="error && !passwordLengthError" class="error-message">
       <span class="error-icon">⚠️</span>
       {{ error }}
     </div>
@@ -40,7 +46,7 @@
     <button
       type="submit"
       class="submit-btn"
-      :disabled="loading"
+      :disabled="loading || !canSubmit"
     >
       <span v-if="loading" class="loading-spinner">⏳</span>
       <span>{{ loading ? '登录中...' : '登录' }}</span>
@@ -52,7 +58,7 @@
       <button
         type="button"
         class="switch-btn"
-        @click="$emit('switch-to-register')"
+        @click="emit('switch-to-register')"
       >
         立即注册
       </button>
@@ -61,15 +67,17 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore } from "@/stores/auth"; // 引入auth store
+import { loginApi } from "@/api/auth";
+import { setTokens, clearTokens } from "@/utils/token";
 
-// 路由实例
+// 定义emit
+const emit = defineEmits(['switch-to-register']);
 const router = useRouter();
 const route = useRoute();
-// 权限仓库
-const authStore = useAuthStore();
+const authStore = useAuthStore(); // 初始化auth store
 
 // 表单状态
 const form = ref({
@@ -79,46 +87,82 @@ const form = ref({
 const loading = ref(false);
 const error = ref("");
 
+// 计算是否有密码长度错误
+const passwordLengthError = computed(() => {
+  return form.value.password.length > 0 && form.value.password.length < 6;
+});
+
+// 计算是否可以提交
+const canSubmit = computed(() => {
+  return form.value.username.trim().length > 0 && form.value.password.length >= 6;
+});
+
+// 清空错误提示方法
+const clearError = () => {
+  if (error.value) {
+    error.value = "";
+  }
+};
+
 /**
- * 处理登录逻辑（核心修复：简化逻辑，优化错误提示）
+ * 处理登录逻辑（严格对齐后端AuthService.authenticate_user逻辑）
  */
 async function handleLogin() {
   try {
-    // 前置校验
+    // 前置校验（和后端保持一致）
     const username = form.value.username.trim();
     const password = form.value.password.trim();
     
+    error.value = "";
+
     if (!username) {
       error.value = "请输入用户名";
       return;
     }
-    if (!password) {
-      error.value = "请输入密码";
+
+    if (password.length < 6) {
+      error.value = "密码长度不能少于6位";
       return;
     }
 
-    error.value = "";
     loading.value = true;
 
-    // 调用登录接口
-    await authStore.login({ username, password });
-
-    // 登录成功跳转
-    alert("登录成功！即将跳转首页");
-    const redirect = route.query.redirect || "/";
-    const validRedirect = typeof redirect === "string" && redirect.startsWith("/") 
-      ? redirect 
-      : "/";
-    await router.push(validRedirect);
-
-    // 清空表单
-    form.value.username = "";
-    form.value.password = "";
+    // 调用登录接口（后端返回ServiceResult格式）
+    const response = await loginApi({ username, password });
+    console.log('登录接口返回：', response);
+    
+    // 严格解析后端响应（适配api_ok返回格式）
+    if (response.success) {
+      // 存储Token到本地（对齐后端返回的data结构）
+      setTokens({
+        access_token: response.data.access_token,
+        refresh_token: response.data.refresh_token,
+        expires_in: response.data.expires_in || 86400 // 优先使用后端返回的过期时间
+      });
+      
+      // 同步更新auth store状态（核心修复：之前缺失）
+      authStore.user = response.data.user || { username };
+      
+  // 跳转到首页（支持redirect参数）
+  // router.currentRoute 是一个 ref，在 setup 外直接访问会导致 undefined，
+  // 在组件中使用 useRoute() 更安全
+  const redirect = route?.query?.redirect || "/";
+  await router.push(redirect);
+      
+      // 清空表单
+      form.value = { username: "", password: "" };
+    } else {
+      // 后端返回的业务错误
+      error.value = response.message || "登录失败";
+      clearTokens();
+    }
 
   } catch (err) {
-    // 核心修复：直接显示后端返回的错误信息
-    console.error("登录错误：", err.message);
-    error.value = err.message;
+    // 捕获所有错误（包括过滤后的401错误）
+    const errMsg = err.message || "登录失败，请稍后重试";
+    console.error("登录错误：", errMsg);
+    error.value = errMsg;
+    clearTokens();
   } finally {
     loading.value = false;
   }
@@ -160,10 +204,23 @@ async function handleLogin() {
   transition: all 0.2s ease;
 }
 
+.input-error {
+  border-color: #e53e3e !important;
+}
+
 .form-input:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.tips-text {
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+.error-tips {
+  color: #e53e3e;
 }
 
 .error-message {
@@ -202,6 +259,7 @@ async function handleLogin() {
 .submit-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+  background: linear-gradient(135deg, #a7b0e8, #a078b8);
 }
 
 .submit-btn:hover:not(:disabled) {
@@ -215,12 +273,8 @@ async function handleLogin() {
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .form-footer {

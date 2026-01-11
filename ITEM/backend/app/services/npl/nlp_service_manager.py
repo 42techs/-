@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 import logging
+import os
 
 from .word_frequency_analyzer import WordFrequencyAnalyzer
 from .sentiment_analyzer import SentimentAnalyzer
@@ -90,11 +91,11 @@ class NLPServiceManager:
         """获取数据"""
         start_date = datetime.now() - timedelta(days=days)
         
-        if data_type == 'articles':
+        if data_type in ('articles', 'article'):
             query = {'created_at': {'$gte': start_date}}
             return list(self.db.articles.find(query).sort('created_at', -1))
         
-        elif data_type == 'comments':
+        elif data_type in ('comments', 'comment'):
             query = {'created_at': {'$gte': start_date}}
             if article_id:
                 query['article_id'] = article_id
@@ -104,12 +105,21 @@ class NLPServiceManager:
     
     def _load_stop_words(self) -> set:
         """加载停用词"""
+        # 首先尝试从同目录下的 stopwords.txt 加载（每行一个词）
+        try:
+            here = os.path.dirname(__file__)
+            path = os.path.join(here, 'stopwords.txt')
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    words = {line.strip() for line in f if line.strip() and not line.strip().startswith('#')}
+                    logger.info(f'Loaded {len(words)} stop words from {path}')
+                    return words
+        except Exception as e:
+            logger.warning(f'加载停用词文件失败: {e}')
+
+        # 回退到基础停用词集（最小集，避免完全为空）
         base_stop_words = {
-            '的', '了', '在', '是', '我', '有', '和', '就',
-            '不', '人', '都', '一', '一个', '上', '也', '很',
-            '到', '说', '要', '去', '你', '会', '着', '没有',
-            '看', '好', '自己', '这', '那', '他', '她', '它',
-            '来', '为', '个', '中', '大', '从', '以', '对'
+            '的', '了', '在', '是', '我', '有', '和', '就', '不', '人'
         }
         return base_stop_words
     

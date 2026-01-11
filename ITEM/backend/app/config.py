@@ -1,3 +1,4 @@
+# app/config.py
 import os
 from datetime import timedelta
 
@@ -12,7 +13,7 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     JSON_AS_ASCII = False  
     
-    # MySQL配置（用户认证）
+    # MySQL配置(用户认证)
     MYSQL_HOST = os.getenv('MYSQL_HOST', '127.0.0.1')
     MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
     MYSQL_USER = os.getenv('MYSQL_USER', 'root')
@@ -26,7 +27,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False
     
-    # MongoDB配置（爬虫数据）
+    # MongoDB配置(爬虫数据)
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://127.0.0.1:27017')
     MONGO_DATABASE = os.getenv('MONGO_DATABASE', 'weibo_db')
 
@@ -35,12 +36,11 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', '24')))
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', '7')))
 
-    # Kafka配置：支持更多真值表示，保留向后兼容的变量名
-    _KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'true') or 'false'
+    # Kafka配置 - 默认禁用
+    _KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'false')
     KAFKA_ENABLED = str(_KAFKA_ENABLED).strip().lower() in ('1', 'true', 'yes', 'on')
     KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-    # 兼容旧名称
-    KAFKA_BOOTSTRAP = KAFKA_BOOTSTRAP_SERVERS
+    KAFKA_BOOTSTRAP = KAFKA_BOOTSTRAP_SERVERS  # 兼容旧名称
     
     # 微博爬虫配置
     WEIBO_COOKIE = os.getenv('WEIBO_COOKIE', '')
@@ -49,7 +49,7 @@ class Config:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     )
     
-    # CORS配置：解析逗号分隔并过滤空项
+    # CORS配置
     _CORS_RAW = os.getenv('CORS_ORIGINS', '*')
     if isinstance(_CORS_RAW, str):
         CORS_ORIGINS = [o.strip() for o in _CORS_RAW.split(',') if o.strip()]
@@ -79,6 +79,7 @@ class TestingConfig(Config):
     """测试环境配置"""
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    KAFKA_ENABLED = False  # 测试环境强制禁用 Kafka
 
 
 # 配置字典

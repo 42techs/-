@@ -16,7 +16,7 @@
     </div>
 
     <div class="content-wrapper">
-      <!-- 控制面板 -->
+      <!-- 控制面板（新增参数输入） -->
       <section class="card control-card">
         <div class="card-header">
           <div class="header-left">
@@ -159,9 +159,15 @@ import { ref, computed, onBeforeUnmount, onMounted } from "vue";
 import { runSpider, spiderStatus, getSpiderTasks } from "@/api/spider";
 import Navbar from "@/components/Navbar.vue";
 
+// 新增：爬虫参数配置
+const taskParams = ref({
+  keyword: "",
+  page: 1
+});
+
 // 状态管理
 const taskId = ref(""); // 爬虫任务ID
-const status = ref(""); // 任务状态(PENDING/RUNNING/SUCCESS/FAILED)
+const status = ref(""); // 任务状态(PENDING/RUNNING/SUCCESS/FAILED/PARAM_ERROR/NOT_STARTED)
 const error = ref(""); // 错误信息
 const result = ref(""); // 任务执行结果
 const running = ref(false); // 是否正在运行
@@ -181,6 +187,8 @@ const statusClass = computed(() => {
     RUNNING: "status-running",
     SUCCESS: "status-success",
     FAILED: "status-failed",
+    PARAM_ERROR: "status-failed",
+    NOT_STARTED: "status-pending"
   };
   return statusMap[status.value] || "status-pending";
 });
@@ -192,6 +200,8 @@ const statusText = computed(() => {
     RUNNING: "执行中",
     SUCCESS: "已完成",
     FAILED: "失败",
+    PARAM_ERROR: "参数错误",
+    NOT_STARTED: "未启动"
   };
   return textMap[status.value] || "未知";
 });
@@ -233,7 +243,7 @@ async function handleStartSpider() {
   globalError.value = "";
 
   try {
-    // 调用启动接口
+    // 调用启动接口（不再传递关键词/页码）
     const resp = await runSpider();
     
     // 适配后端返回的成功码 code: 0
@@ -252,18 +262,18 @@ async function handleStartSpider() {
     status.value = resp.data?.status || "PENDING";
     running.value = true;
 
-    // 模拟进度更新（仅前端展示）
+    // 启动温和的进度推进，直到后端返回更精确的数据
+    let rampRate = 0.3 + Math.random() * 0.7; // 每秒增长 0.3-1.0%
     progressTimer = setInterval(() => {
-      if (progress.value < 90) {
-        progress.value += Math.random() * 10;
-        progress.value = Math.min(progress.value, 90);
+      if (progress.value < 80) {
+        progress.value = Math.min(progress.value + rampRate, 80);
       }
-    }, 800);
+    }, 1000);
 
     // 轮询任务状态
     statusTimer = setInterval(async () => {
       await checkSpiderStatus();
-    }, 1500);
+    }, 8000); // 延长轮询间隔至 8 秒，减少频繁请求
 
     // 立即刷新任务历史
     await fetchTaskHistory();
@@ -299,7 +309,7 @@ async function handleStartSpider() {
 }
 
 /**
- * 检查爬虫任务状态（适配后端 /api/spider/tasks/{taskId} 接口）
+ * 检查爬虫任务状态（适配更多后端状态）
  */
 async function checkSpiderStatus() {
   if (!taskId.value) return;
@@ -317,13 +327,40 @@ async function checkSpiderStatus() {
     status.value = taskData?.status || "";
     error.value = taskData?.error || "";
 
-    // 任务成功完成
-    if (status.value === "SUCCESS") {
+    // 任务参数错误
+    if (status.value === "PARAM_ERROR") {
+      clearAllTimers();
+      running.value = false;
+      error.value = "爬虫参数错误：" + (taskData?.error || "请检查关键词或页数配置");
+      await fetchTaskHistory();
+      return;
+    }
+
+    // 任务未启动
+    if (status.value === "NOT_STARTED") {
+      error.value = "任务未启动：" + (taskData?.error || "请检查后端爬虫配置");
+      return;
+    }
+
+    // 当任务成功完成
+    if (status.value === 'SUCCESS') {
       clearAllTimers();
       progress.value = 100;
       running.value = false;
-      // 格式化结果展示（适配后端result字段）
-      result.value = JSON.stringify(taskData?.result || {}, null, 2);
+      const resObj = taskData?.result || {};
+      // 如果包含统计信息，优先展示 summary
+      if (resObj && (resObj.arctype_count || resObj.article_count || resObj.comment_count || resObj.failed_count !== undefined)) {
+        const summary = {
+          arctype_count: resObj.arctype_count || 0,
+          article_count: resObj.article_count || 0,
+          comment_count: resObj.comment_count || 0,
+          failed_count: resObj.failed_count || 0,
+          elapsed_time: resObj.elapsed_time || 0
+        };
+        result.value = JSON.stringify({ summary, full: resObj }, null, 2);
+      } else {
+        result.value = JSON.stringify(resObj, null, 2);
+      }
       // 刷新任务历史
       await fetchTaskHistory();
     }
@@ -332,14 +369,43 @@ async function checkSpiderStatus() {
     if (status.value === "FAILED") {
       clearAllTimers();
       running.value = false;
-      error.value = taskData?.error || "任务执行失败，具体原因请查看后端日志";
+      // 如果是 Kafka 无法连接，给出更友好的运维指引
+      const rawErr = taskData?.error || "任务执行失败，具体原因请查看后端日志";
+      if (rawErr && rawErr.includes('NoBrokersAvailable')) {
+        error.value = "任务失败：消息队列不可用（NoBrokersAvailable），请联系运维检查 Kafka 服务（broker/advertised.listeners）或稍后重试";
+      } else {
+        error.value = rawErr;
+      }
       // 刷新任务历史
       await fetchTaskHistory();
     }
 
-    // 任务仍在运行
-    if (status.value === "RUNNING") {
-      progress.value = Math.min(progress.value + 1, 90);
+    // 任务仍在运行：利用后端返回的部分统计信息估算进度
+    if (status.value === 'RUNNING') {
+      const res = taskData?.result || {};
+      // 优先使用 elapsed_time 与后端预估总时长（如果有）
+      if (res.elapsed_time && res.estimated_total_time) {
+        const pct = Math.min((res.elapsed_time / res.estimated_total_time) * 100, 99);
+        progress.value = Math.max(progress.value, pct);
+      } else if ((res.article_count || 0) > 0 && (res.arctype_count || 0) > 0) {
+        // 基于抓取量估算（粗略）
+        const got = (res.article_count || 0) + (res.comment_count || 0);
+        const target = (res.arctype_count || 0) * 50; // 假设每个 arctype 平均 50 条
+        if (target > 0) {
+          const pct = Math.min((got / target) * 100, 98);
+          progress.value = Math.max(progress.value, pct);
+        } else {
+          progress.value = Math.min(98, progress.value + 0.5 + Math.random() * 1.0);
+        }
+      } else if (res.params_received) {
+        // 如果只收到回传参数，轻微增长
+        progress.value = Math.min(95, progress.value + 0.8 + Math.random() * 0.8);
+      } else {
+        // 没有信息时温和推进
+        progress.value = Math.min(95, progress.value + 0.5 + Math.random() * 0.7);
+      }
+      // 避免进度瞬间回退
+      progress.value = Math.max(progress.value, 1);
     }
 
   } catch (e) {
@@ -431,10 +497,10 @@ function clearAllTimers() {
 onMounted(async () => {
   // 初始加载任务历史
   await fetchTaskHistory();
-  // 启动任务历史轮询（每5秒刷新一次）
+  // 启动任务历史轮询（每15秒刷新一次）
   historyTimer = setInterval(() => {
     fetchTaskHistory();
-  }, 5000);
+  }, 15000);
 });
 
 // 组件卸载前清除定时器（防止内存泄漏）
@@ -444,7 +510,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 原有样式保持不变，仅新增/修改以下样式 */
+/* 原有样式 + 新增参数输入样式 */
 .spider-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea15 0%, #764ba215 50%, #f5576c15 100%);
@@ -662,6 +728,42 @@ onBeforeUnmount(() => {
 
 .card-body {
   padding: 36px;
+}
+
+/* 新增：表单样式 */
+.form-group {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+}
+
+.form-label .required {
+  color: #e53e3e;
+  margin-left: 4px;
+}
+
+.form-input {
+  padding: 16px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 1rem;
+  color: #1a202c;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 /* 操作按钮 */

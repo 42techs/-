@@ -41,8 +41,8 @@ export function setTokens({ access_token, refresh_token, expires_in }) {
     if (access_token) localStorage.setItem(ACCESS_KEY, access_token);
     if (refresh_token) localStorage.setItem(REFRESH_KEY, refresh_token);
     
-    // 计算过期时间（毫秒），默认1小时
-    const expireSeconds = expires_in || 3600;
+  // 计算过期时间（毫秒），默认24小时（与后端默认保持一致）
+  const expireSeconds = expires_in || 86400;
     const expireTime = Date.now() + expireSeconds * 1000;
     localStorage.setItem(EXPIRE_KEY, expireTime.toString()); // 修复：存储为字符串避免NaN
   } catch (e) {

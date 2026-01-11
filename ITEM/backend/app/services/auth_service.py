@@ -37,6 +37,10 @@ class AuthService:
 
     @staticmethod
     def register_user(username: str, email: str, password: str) -> ServiceResult:
+        # 参数校验：避免 None 导致的 generate_password_hash/encode 错误
+        if not username or not email or not password:
+            return ServiceResult(False, "参数缺失：用户名、邮箱和密码均为必填项")
+
         try:
             if User.query.filter_by(username=username).first():
                 return ServiceResult(False, "用户名已存在")
@@ -68,6 +72,10 @@ class AuthService:
 
     @staticmethod
     def authenticate_user(username: str, password: str) -> ServiceResult:
+        # 参数校验
+        if not username or not password:
+            return ServiceResult(False, "参数缺失：用户名和密码为必填项")
+
         try:
             user = User.query.filter_by(username=username).first()
 
@@ -118,6 +126,8 @@ class AuthService:
     @staticmethod
     def change_password(user_id: int, current_password: str, new_password: str) -> ServiceResult:
         try:
+            if not current_password or not new_password:
+                return ServiceResult(False, "参数缺失：当前密码和新密码为必填项")
             user = User.query.get(user_id)
             if not user or not user.check_password(current_password):
                 return ServiceResult(False, "当前密码错误")

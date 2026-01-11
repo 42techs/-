@@ -1,3 +1,4 @@
+# app/jobs/spider_job.py
 import json
 import sys
 from datetime import datetime
@@ -9,13 +10,12 @@ from app.models.spider_task import SpiderTask
 
 from app.services.spider.client import WeiboClient, WeiboClientConfig
 from app.services.spider.parser import WeiboParser
-from app.services.spider.publisher import KafkaPublisher, KafkaPublisherConfig, NullPublisher
 from app.services.spider.repository import MongoRepository, MongoRepositoryConfig
 from app.services.spider.service import SpiderService
 
 
 def build_spider_service() -> SpiderService:
-    """构建爬虫服务实例 - 修复Kafka配置问题"""
+    """构建爬虫服务实例 - 简化版(仅MongoDB)"""
     cfg = current_app.config
 
     # 客户端配置
@@ -29,18 +29,8 @@ def build_spider_service() -> SpiderService:
     # 解析器
     parser = WeiboParser()
 
-    # Kafka发布器 - 根据配置决定是否启用
-    if cfg.get('KAFKA_ENABLED', False):
-        publisher = KafkaPublisher(
-            KafkaPublisherConfig(
-                bootstrap_servers=cfg["KAFKA_BOOTSTRAP"]
-            )
-        )
-    else:
-        # 使用空发布器(不发送到Kafka)
-        publisher = NullPublisher()
-
-    # MongoDB存储 - 添加db_name参数
+    # MongoDB存储
+    current_app.logger.info(f"初始化MongoDB: {cfg['MONGO_URI']}/{cfg['MONGO_DATABASE']}")
     repo = MongoRepository(
         MongoRepositoryConfig(
             mongo_uri=cfg["MONGO_URI"],
@@ -48,7 +38,7 @@ def build_spider_service() -> SpiderService:
         )
     )
 
-    return SpiderService(client, parser, publisher, repo)
+    return SpiderService(client, parser, repo)
 
 
 def main(task_id: str):
@@ -60,7 +50,7 @@ def main(task_id: str):
             app.logger.error(f"任务不存在: {task_id}")
             return
 
-        # 更新任务状态为运行中
+        # 更新任务状态
         task.status = "RUNNING"
         task.started_at = datetime.utcnow()
         db.session.commit()
@@ -68,9 +58,18 @@ def main(task_id: str):
         try:
             app.logger.info(f"开始执行爬虫任务: {task_id}")
             
+            # 读取任务参数
+            spider_params = {}
+            if task.params_json:
+                try:
+                    spider_params = json.loads(task.params_json)
+                    app.logger.info(f"爬虫参数: {spider_params}")
+                except json.JSONDecodeError as e:
+                    app.logger.error(f"参数解析失败: {e}")
+            
             # 构建并运行爬虫服务
             spider = build_spider_service()
-            result = spider.run_spider()
+            result = spider.run_spider(**spider_params)
 
             # 更新任务结果
             task.status = "SUCCESS" if result.get("success") else "FAILED"

@@ -6,7 +6,7 @@ import http from '@/utils/http';
  * @param {Object} params - {days}
  */
 export function analyzeArticlesApi(params) {
-  return http.get('/api/analysis/articles', { params });
+  return http.get('/api/analysis/article', { params });
 }
 
 /**
@@ -14,7 +14,7 @@ export function analyzeArticlesApi(params) {
  * @param {Object} params - {days, article_id}
  */
 export function analyzeCommentsApi(params) {
-  return http.get('/api/analysis/comments', { params });
+  return http.get('/api/analysis/comment', { params });
 }
 
 /**
@@ -55,6 +55,14 @@ export function getWordCloudDataApi(params) {
  */
 export function getAnalysisStatsApi(params) {
   return http.get('/api/analysis/stats', { params });
+}
+
+/**
+ * 综合分析（一次性返回词频、情感、统计等）
+ * @param {Object} params - {type: 'articles'|'comments', days: number, article_id?: string}
+ */
+export function comprehensiveAnalysisApi(params) {
+  return http.get('/api/analysis/comprehensive', { params });
 }
 
 /**
