@@ -22,5 +22,5 @@ export const logoutApi = () => {
 
 // 获取用户信息
 export const getUserInfoApi = () => {
-  return http.get('/auth/user')
+  return http.get('/auth/profile')
 }

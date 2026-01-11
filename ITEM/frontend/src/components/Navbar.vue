@@ -14,10 +14,16 @@
       </div>
 
       <div class="navbar-actions">
+        <!-- 已登录：显示用户名 + 邮箱 + 退出 -->
         <div v-if="isLoggedIn" class="user-info">
-          <span class="username">{{ username }}</span>
+          <div class="user-text">
+            <span class="username">{{ username || '用户' }}</span>
+            <span class="email">{{ email || '-' }}</span>
+          </div>
           <button @click="handleLogout" class="btn-logout">退出</button>
         </div>
+
+        <!-- 未登录：显示登录按钮 -->
         <router-link v-else to="/auth" class="btn-login">登录</router-link>
       </div>
     </div>
@@ -33,7 +39,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isLoggedIn = computed(() => authStore.isLoggedIn)
-const username = computed(() => authStore.username || '用户')
+const username = computed(() => authStore.username)
+const email = computed(() => authStore.email)
 
 const handleLogout = () => {
   authStore.logout()
@@ -120,9 +127,21 @@ const handleLogout = () => {
   gap: 15px;
 }
 
+.user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  text-align: right;
+}
+
 .username {
   color: #374151;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.email {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .btn-logout,
@@ -153,7 +172,7 @@ const handleLogout = () => {
     font-size: 14px;
   }
 
-  .username {
+  .user-text {
     display: none;
   }
 }

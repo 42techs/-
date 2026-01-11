@@ -14,8 +14,27 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
+import { onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { getToken } from '@/utils/token'
+import { getUserInfoApi } from '@/api/auth'
 
 const route = useRoute()
+
+const authStore = useAuthStore()
+
+onMounted(async () => {
+  const token = getToken()
+  if (token && !authStore.user) {
+    try {
+      const res = await getUserInfoApi()
+      authStore.setUser(res.data.user)
+    } catch (e) {
+      // token 失效
+      authStore.logout()
+    }
+  }
+})
 
 // 在认证页面隐藏导航栏
 const showNavbar = computed(() => {
