@@ -57,12 +57,13 @@
 }
 
 .hero {
-  max-width: 1200px;
+  max-width: 1400px; /* 增大最大宽度 */
   text-align: center;
+  width: 100%;
 }
 
 .title {
-  font-size: 48px;
+  font-size: 56px; /* 增大字体大小 */
   font-weight: 800;
   color: #1a1a1a;
   margin-bottom: 15px;
@@ -73,24 +74,25 @@
 }
 
 .subtitle {
-  font-size: 18px;
+  font-size: 22px; /* 增大字体大小 */
   color: #6b7280;
   margin-bottom: 60px;
 }
 
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 25px;
+  grid-template-columns: repeat(3, 1fr); /* 3列布局 */
+  gap: 20px;
   margin-bottom: 60px;
 }
 
 .feature-card {
   background: white;
-  padding: 30px;
+  padding: 40px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: transform 0.2s, box-shadow 0.2s;
+  text-align: center;
 }
 
 .feature-card:hover {
@@ -99,34 +101,34 @@
 }
 
 .feature-icon {
-  font-size: 48px;
-  margin-bottom: 15px;
+  font-size: 72px; /* 增大图标 */
+  margin-bottom: 20px;
 }
 
 .feature-card h3 {
-  font-size: 20px;
+  font-size: 24px; /* 增大标题字体 */
   color: #1f2937;
-  margin-bottom: 10px;
+  margin-bottom: 15px;
 }
 
 .feature-card p {
-  font-size: 14px;
+  font-size: 16px; /* 增大描述字体 */
   color: #6b7280;
 }
 
 .cta-buttons {
   display: flex;
-  gap: 20px;
+  gap: 30px;
   justify-content: center;
 }
 
 .btn {
-  padding: 14px 32px;
+  padding: 16px 40px;
   border-radius: 8px;
   font-weight: 600;
   text-decoration: none;
   transition: all 0.2s;
-  font-size: 16px;
+  font-size: 18px; /* 增大按钮字体 */
 }
 
 .btn-primary {
@@ -151,17 +153,23 @@
   color: white;
 }
 
+@media (max-width: 1024px) {
+  .features {
+    grid-template-columns: repeat(2, 1fr); /* 2列布局 */
+  }
+}
+
 @media (max-width: 768px) {
+  .features {
+    grid-template-columns: 1fr; /* 1列布局 */
+  }
+
   .title {
-    font-size: 32px;
+    font-size: 48px; /* 调整标题字体大小 */
   }
 
   .subtitle {
-    font-size: 16px;
-  }
-
-  .features {
-    grid-template-columns: 1fr;
+    font-size: 18px; /* 调整副标题字体大小 */
   }
 
   .cta-buttons {
@@ -173,4 +181,3 @@
   }
 }
 </style>
-

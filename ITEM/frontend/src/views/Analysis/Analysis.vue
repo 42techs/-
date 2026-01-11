@@ -11,7 +11,7 @@
         <div class="filter-item">
           <label>数据类型</label>
           <!-- 移除@change事件，仅依赖按钮点击 -->
-          <select v-model="filters.type">
+          <select v-model="filters.type" class="custom-select">
             <option value="articles">文章</option>
             <option value="comments">评论</option>
           </select>
@@ -19,7 +19,7 @@
 
         <div class="filter-item">
           <label>时间范围</label>
-          <select v-model="filters.days">
+          <select v-model="filters.days" class="custom-select">
             <option :value="1">最近1天</option>
             <option :value="7">最近7天</option>
             <option :value="14">最近14天</option>
@@ -34,6 +34,7 @@
             v-model="filters.articleId" 
             type="text" 
             placeholder="输入文章ID"
+            class="custom-input"
           />
         </div>
 
@@ -228,15 +229,20 @@ onMounted(() => {
 }
 
 .header h1 {
-  font-size: 32px;
-  font-weight: 700;
+  font-size: 56px;
+  font-weight: 800;
   color: #1a1a1a;
-  margin-bottom: 8px;
+  margin-bottom: 15px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
-  color: #666;
-  font-size: 14px;
+  font-size: 22px;
+  color: #6b7280;
+  margin-bottom: 60px;
 }
 
 .control-panel {
@@ -262,28 +268,50 @@ onMounted(() => {
 }
 
 .filter-item label {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   color: #333;
 }
 
 .filter-item select,
 .filter-item input {
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 8px;
+  font-size: 16px;
   min-width: 150px;
 }
 
+.custom-select {
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  outline: none;
+  transition: all 0.2s;
+}
+
+.custom-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+.custom-input {
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
 .btn-refresh {
-  padding: 8px 20px;
+  padding: 10px 20px;
   background: #3b82f6;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
   transition: background 0.2s;
 }
 
@@ -304,29 +332,53 @@ onMounted(() => {
 
 .stat-card {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 15px;
-  border-radius: 8px;
+  padding: 20px;
+  border-radius: 12px;
   color: white;
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 14px;
   opacity: 0.9;
   margin-bottom: 5px;
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
 }
 
-.loading-state,
-.error-state,
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
+.tabs {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.tab {
+  padding: 14px 25px;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tab:hover {
+  border-color: #3b82f6;
+}
+
+.tab.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.tab-content {
   background: white;
   border-radius: 12px;
+  padding: 30px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
@@ -345,51 +397,27 @@ onMounted(() => {
   100% { transform: rotate(360deg); }
 }
 
-.tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  overflow-x: auto;
-  padding-bottom: 5px;
+@media (max-width: 1024px) {
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tabs {
+    gap: 10px;
+  }
 }
 
-.tab {
-  padding: 12px 20px;
-  background: white;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
+@media (max-width: 768px) {
+  .stats-bar {
+    grid-template-columns: 1fr;
+  }
 
-.tab:hover {
-  border-color: #3b82f6;
-}
+  .title {
+    font-size: 32px;
+  }
 
-.tab.active {
-  background: #3b82f6;
-  color: white;
-  border-color: #3b82f6;
-}
-
-.tab-icon {
-  font-size: 18px;
-}
-
-.tab-label {
-  font-weight: 500;
-}
-
-.tab-content {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  min-height: 500px;
+  .subtitle {
+    font-size: 18px;
+  }
 }
 </style>
-

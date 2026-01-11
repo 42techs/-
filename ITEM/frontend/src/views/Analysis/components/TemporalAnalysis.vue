@@ -106,7 +106,7 @@ import { computed } from 'vue'
 const props = defineProps({
   data: {
     type: Object,
-    default: () => ({})
+    default: () => ({}),
   }
 })
 
@@ -125,7 +125,7 @@ const trendText = computed(() => {
   const map = {
     'increasing': '↗️ 增长中',
     'decreasing': '↘️ 下降中',
-    'stable': '→ 稳定'
+    'stable': '→ 稳定',
   }
   return map[direction] || '-'
 })
@@ -135,7 +135,7 @@ const trendClass = computed(() => {
   return {
     'increasing': 'trend-up',
     'decreasing': 'trend-down',
-    'stable': 'trend-stable'
+    'stable': 'trend-stable',
   }[direction]
 })
 
@@ -246,7 +246,7 @@ const formatDate = (dateStr) => {
 
 .bar {
   width: 100%;
-  max-width: 40px;
+  max-width: 50px;  /* Increase max width if necessary */
   background: linear-gradient(to top, #3b82f6, #8b5cf6);
   border-radius: 4px 4px 0 0;
   transition: all 0.3s;
@@ -258,14 +258,14 @@ const formatDate = (dateStr) => {
 }
 
 .bar-label {
-  font-size: 10px;
+  font-size: 12px;
   color: #6b7280;
-  writing-mode: horizontal-tb;
   white-space: nowrap;
+  text-align: center;
 }
 
 .bar-value {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #3b82f6;
 }
