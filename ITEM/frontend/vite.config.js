@@ -4,19 +4,30 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   plugins: [vue()],
+
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+
   server: {
     proxy: {
-      // 配置代理将 /api 路径的请求转发到后端地址
-      '/api': {
-        target: 'http://10.244.181.48:5000',
+      /**
+       * 前端请求：
+       *   /api/auth/login
+       *
+       * 实际转发到：
+       *   http://10.244.181.48:5000/api/auth/login
+       */
+      "/api": {
+        target: "http://10.244.181.48:5000",
         changeOrigin: true,
-        secure: false, // 如果后端是 HTTP，不是 HTTPS
-      }
-    }
-  }
+        secure: false,
+
+        // ⭐ 关键：保留 /api，不做 rewrite
+        // 因为你的后端接口本身就有 /api
+      },
+    },
+  },
 });

@@ -1,4 +1,9 @@
-import http from '@/utils/http'
+import http from "@/utils/http";
+
+export function loginApi(data) {
+  return http.post("/auth/login", data);
+}
+
 
 // 登录接口
 export const loginApi = (data) => {
